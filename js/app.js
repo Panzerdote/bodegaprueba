@@ -1,320 +1,1465 @@
+// js/app.js
 const App = {
-    state: { inventario: [], secciones: [], unidades: [], movimientos: [], config: { porcentaje_critico: 20, dias_vencimiento: 30 } },
+    inventario: [],
+    secciones: [],
+    movimientos: [],
+    config: {},
+    bodega: '',
+    user: null,
 
     async init() {
+        this.user = window.currentUser;
+        this.bodega = window.currentBodega || 'BODEGA';
+        
+        // Configurar conexión
+        UI.setConnectionStatus('warning', 'CONECTANDO...');
+        
         try {
-            UI.setConnectionStatus('warning', 'CONECTANDO...');
-            if (typeof supabaseClient === 'undefined') throw new Error('CLIENTE NO INICIALIZADO');
-            UI.setupMobileMenu();
-            await this.loadAllData();
+            // Cargar datos iniciales
+            await this.cargarDatosIniciales();
+            
+            // Configurar eventos
             this.setupEventListeners();
-            this.showDashboard();
+            
+            // Cargar vista inicial
+            this.mostrarVista('dashboard');
+            
+            // Actualizar dashboard
+            await this.actualizarDashboard();
+            
             UI.setConnectionStatus('success', 'CONECTADO');
-            this.verificarConfiguracionInicial();
-        } catch (error) { console.error(error); UI.setConnectionStatus('error', 'ERROR'); UI.showToast('ERROR AL CONECTAR', 'error'); }
+            
+            // Cargar movimientos recientes en el dashboard
+            this.movimientos = await DB.getMovimientos(10);
+            this.renderMovimientosRecientes();
+            
+        } catch (error) {
+            console.error('Error en init:', error);
+            UI.setConnectionStatus('error', 'ERROR DE CONEXIÓN');
+            UI.showToast('Error al conectar con la base de datos', 'error');
+        }
     },
 
-    verificarConfiguracionInicial() {
-        const bodega = window.currentBodega || 'BODEGA';
-        const esBotiquin = bodega === 'BOTIQUIN';
-        const sinSecciones = this.state.secciones.length === 0;
-        const sinUnidades = this.state.unidades.length === 0;
-        if (esBotiquin) { if (sinUnidades) { UI.showToast('NO TIENES UNIDADES DE MEDIDA CONFIGURADAS. CONFIGÚRALAS ANTES DE USAR EL SISTEMA.', 'warning'); } }
-        else { if (sinSecciones && sinUnidades) { UI.showToast('NO TIENES ANAQUELES NI UNIDADES DE MEDIDA CONFIGURADOS. CONFIGÚRALOS ANTES DE EMPEZAR A INGRESAR DATOS.', 'warning'); } else if (sinSecciones) { UI.showToast('NO TIENES ANAQUELES CONFIGURADOS. CONFIGÚRALOS ANTES DE EMPEZAR A INGRESAR DATOS.', 'warning'); } else if (sinUnidades) { UI.showToast('NO TIENES UNIDADES DE MEDIDA CONFIGURADAS. CONFIGÚRALAS ANTES DE USAR EL SISTEMA.', 'warning'); } }
-    },
-
-    async loadAllData() {
-        const b = window.currentBodega || 'BODEGA';
-        const [inventario, secciones, unidades, config, movimientos] = await Promise.all([DB.getInventario(b), DB.getSecciones(b), DB.getUnidadesMedida(b), DB.getConfig(b), DB.getTodosMovimientos(b)]);
-        this.state.inventario = inventario || []; this.state.secciones = secciones || []; this.state.unidades = unidades || [];
-        this.state.config = config || { porcentaje_critico: 20, dias_vencimiento: 30 }; this.state.movimientos = movimientos || [];
+    async cargarDatosIniciales() {
+        try {
+            this.inventario = await DB.getInventario(this.bodega);
+            this.secciones = await DB.getSecciones(this.bodega);
+            this.config = await DB.getConfig(this.bodega);
+            this.movimientos = await DB.getMovimientos(50, this.bodega);
+            
+            // Actualizar badge del inventario
+            document.getElementById('total-badge').textContent = this.inventario.length;
+        } catch (error) {
+            console.error('Error cargando datos:', error);
+            throw error;
+        }
     },
 
     setupEventListeners() {
-        document.querySelectorAll('.sidebar-menu a[data-section]').forEach(link => { link.addEventListener('click', (e) => { e.preventDefault(); const s = link.dataset.section; if (s === 'dashboard') this.showDashboard(); else if (s === 'inventario') this.showInventario(); else if (s === 'movimientos') this.showMovimientos(); }); });
-        document.getElementById('btn-ingreso').addEventListener('click', (e) => { e.preventDefault(); this.showIngresoModal(); });
-        document.getElementById('btn-salida').addEventListener('click', (e) => { e.preventDefault(); this.showSalidaModal(); });
-        const btnBuscar = document.getElementById('btn-buscar-anaquel'); if (btnBuscar) btnBuscar.addEventListener('click', (e) => { e.preventDefault(); this.showBusquedaAnaquelModal(); });
-        const btnGestionar = document.getElementById('btn-gestionar'); if (btnGestionar) btnGestionar.addEventListener('click', (e) => { e.preventDefault(); this.showGestionSeccionesModal(); });
-        document.getElementById('btn-exportar').addEventListener('click', (e) => { e.preventDefault(); this.exportarExcel(); });
-        const btnAdmin = document.getElementById('btn-admin-usuarios'); if (btnAdmin) btnAdmin.addEventListener('click', (e) => { e.preventDefault(); this.showGestionUsuariosModal(); });
-        document.getElementById('header-actions').addEventListener('click', (e) => { if (e.target.closest('#header-btn-ingreso')) this.showIngresoModal(); else if (e.target.closest('#header-btn-salida')) this.showSalidaModal(); });
-        const ft = document.getElementById('filtro-tipo-movimiento'); if (ft) ft.addEventListener('change', () => this.renderMovimientos());
-        const fu = document.getElementById('filtro-usuario-movimiento'); if (fu) fu.addEventListener('change', () => this.renderMovimientos());
-        const bm = document.getElementById('busqueda-movimientos'); if (bm) bm.addEventListener('input', () => this.renderMovimientos());
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') UI.closeModal(); });
+        // Navegación del sidebar
+        document.querySelectorAll('[data-section]').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                const section = el.getAttribute('data-section');
+                this.mostrarVista(section);
+            });
+        });
+
+        // Botones de ingreso
+        document.getElementById('btn-ingreso')?.addEventListener('click', () => {
+            this.mostrarModalIngreso();
+        });
+        document.getElementById('header-btn-ingreso')?.addEventListener('click', () => {
+            this.mostrarModalIngreso();
+        });
+
+        // Botones de salida
+        document.getElementById('btn-salida')?.addEventListener('click', () => {
+            this.mostrarModalSalida();
+        });
+        document.getElementById('header-btn-salida')?.addEventListener('click', () => {
+            this.mostrarModalSalida();
+        });
+
+        // Buscar anaquel
+        document.getElementById('btn-buscar-anaquel')?.addEventListener('click', () => {
+            this.mostrarModalBuscarAnaquel();
+        });
+        document.getElementById('header-btn-buscar')?.addEventListener('click', () => {
+            this.mostrarModalBuscarAnaquel();
+        });
+
+        // Gestión de secciones y unidades
+        document.getElementById('btn-gestionar')?.addEventListener('click', () => {
+            this.mostrarModalGestion();
+        });
+
+        // Exportar Excel
+        document.getElementById('btn-exportar')?.addEventListener('click', () => {
+            this.exportarInventarioExcel();
+        });
+
+        // Gestión de usuarios (admin)
+        document.getElementById('btn-admin-usuarios')?.addEventListener('click', () => {
+            this.mostrarModalUsuarios();
+        });
+
+        // Generar códigos de barras
+        document.getElementById('btn-generar-codigos')?.addEventListener('click', () => {
+            this.mostrarDialogoGenerarCodigos();
+        });
+
+        // Filtros de inventario
+        document.getElementById('filtro-stock-critico')?.addEventListener('change', () => {
+            this.renderInventario();
+        });
+        document.getElementById('filtro-por-vencer')?.addEventListener('change', () => {
+            this.renderInventario();
+        });
+        document.getElementById('filtro-vencidos')?.addEventListener('change', () => {
+            this.renderInventario();
+        });
+
+        // Búsqueda en movimientos
+        document.getElementById('busqueda-movimientos')?.addEventListener('input', () => {
+            this.renderMovimientos();
+        });
+
+        // Botón cambiar bodega
+        document.querySelector('.btn-accent[onclick="cambiarBodega()"]')?.addEventListener('click', () => {
+            window.location.href = 'seleccionar.html';
+        });
+
+        // Cerrar modal al hacer clic fuera
+        document.getElementById('modal')?.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('modal')) {
+                UI.closeModal();
+            }
+        });
+
+        // Tecla Escape para cerrar modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') UI.closeModal();
+        });
     },
 
-    limpiarCodigoBarras(codigo) {
-        if (!codigo) return '';
-        const match = codigo.match(/\(01\)(\d+)/);
-        return match ? match[1] : codigo.replace(/[()\s-]/g, '').toUpperCase();
+    mostrarVista(vista) {
+        // Ocultar todas las secciones
+        document.querySelectorAll('[id^="section-"]').forEach(el => {
+            el.style.display = 'none';
+        });
+
+        // Mostrar la sección seleccionada
+        const section = document.getElementById(`section-${vista}`);
+        if (section) {
+            section.style.display = 'block';
+        }
+
+        // Actualizar menú activo
+        document.querySelectorAll('.sidebar-menu a').forEach(el => {
+            el.classList.remove('active');
+        });
+        const menuItem = document.querySelector(`[data-section="${vista}"]`);
+        if (menuItem) {
+            menuItem.classList.add('active');
+        }
+
+        // Actualizar título y acciones del header
+        const titles = {
+            dashboard: 'DASHBOARD',
+            inventario: 'INVENTARIO COMPLETO',
+            movimientos: 'HISTORIAL DE MOVIMIENTOS'
+        };
+        document.getElementById('page-title').textContent = titles[vista] || '';
+
+        // Actualizar botones del header según la vista
+        const headerActions = document.getElementById('header-actions');
+        if (vista === 'dashboard') {
+            headerActions.innerHTML = `
+                <button class="btn btn-success" id="header-btn-ingreso">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                    </svg>
+                    INGRESO
+                </button>
+                <button class="btn btn-danger" id="header-btn-salida">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+                    </svg>
+                    SALIDA
+                </button>
+            `;
+            // Re-asignar eventos
+            document.getElementById('header-btn-ingreso')?.addEventListener('click', () => this.mostrarModalIngreso());
+            document.getElementById('header-btn-salida')?.addEventListener('click', () => this.mostrarModalSalida());
+        } else if (vista === 'inventario') {
+            headerActions.innerHTML = `
+                <button class="btn btn-success" id="header-btn-ingreso">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                    </svg>
+                    INGRESO
+                </button>
+                <button class="btn btn-info" id="header-btn-buscar">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    ANAQUEL
+                </button>
+            `;
+            document.getElementById('header-btn-ingreso')?.addEventListener('click', () => this.mostrarModalIngreso());
+            document.getElementById('header-btn-buscar')?.addEventListener('click', () => this.mostrarModalBuscarAnaquel());
+            
+            // Renderizar inventario si estamos en esa vista
+            this.renderInventario();
+        } else if (vista === 'movimientos') {
+            headerActions.innerHTML = `
+                <button class="btn btn-primary" onclick="App.exportarMovimientosExcel()">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    EXPORTAR EXCEL
+                </button>
+            `;
+            this.renderMovimientos();
+        }
     },
 
-    async showDashboard() { UI.setActiveSection('dashboard'); await this.loadAllData(); this.renderDashboard(); },
-    renderDashboard() {
-        const { inventario, secciones, config } = this.state;
-        document.getElementById('total-insumos').textContent = inventario.length;
-        document.getElementById('total-badge').textContent = inventario.length;
-        document.getElementById('stock-total').textContent = inventario.reduce((s, i) => s + (i.stock || 0), 0);
-        document.getElementById('secciones-activas').textContent = [...new Set(secciones.map(s => s.seccion))].length;
-        const criticos = inventario.filter(i => this.esStockCritico(i));
-        document.getElementById('stock-critico').textContent = criticos.length;
-        const hoy = new Date(); const lim = new Date(hoy); lim.setDate(lim.getDate() + (config.dias_vencimiento || 30));
-        const vc = inventario.filter(i => { if (!i.vencimiento) return false; return new Date(i.vencimiento + 'T00:00:00') < hoy; }).length;
-        const pv = inventario.filter(i => { if (!i.vencimiento) return false; const v = new Date(i.vencimiento + 'T00:00:00'); return v >= hoy && v <= lim; }).length;
-        document.getElementById('vencimientos-proximos').textContent = vc + pv;
-        this.renderAlertas(criticos);
+    // ==================== DASHBOARD ====================
+    async actualizarDashboard() {
+        try {
+            const inventario = await DB.getInventario(this.bodega);
+            this.inventario = inventario;
+            
+            // Total insumos
+            document.getElementById('total-insumos').textContent = inventario.length;
+            
+            // Stock total
+            const stockTotal = inventario.reduce((sum, item) => sum + (item.stock || 0), 0);
+            document.getElementById('stock-total').textContent = stockTotal;
+            
+            // Secciones activas
+            const secciones = await DB.getSecciones(this.bodega);
+            this.secciones = secciones;
+            document.getElementById('secciones-activas').textContent = secciones.length;
+            
+            // Stock crítico
+            const critico = inventario.filter(item => item.stock <= CONFIG.porcentajeCritico);
+            document.getElementById('stock-critico').textContent = critico.length;
+            
+            // Vencimientos próximos
+            const hoy = new Date();
+            const diasVencimiento = CONFIG.diasVencimiento || 30;
+            const porVencer = inventario.filter(item => {
+                if (!item.vencimiento) return false;
+                const venc = new Date(item.vencimiento);
+                const diff = Math.ceil((venc - hoy) / (1000 * 60 * 60 * 24));
+                return diff >= 0 && diff <= diasVencimiento;
+            });
+            document.getElementById('vencimientos-proximos').textContent = porVencer.length;
+            
+            // Alertas de stock crítico
+            this.renderAlertasStock(critico);
+            
+            // Actualizar badge
+            document.getElementById('total-badge').textContent = inventario.length;
+            
+        } catch (error) {
+            console.error('Error actualizando dashboard:', error);
+        }
     },
 
-    esStockCritico(item) {
-        if (!item.stock || item.stock === 0) return true;
-        const movs = this.state.movimientos.filter(m => m.insumo && item.nombre && m.insumo.toLowerCase() === item.nombre.toLowerCase() && m.anaquel === item.anaquel);
-        if (movs.length === 0) return false;
-        if (!movs.some(m => m.tipo === 'SALIDA')) return false;
-        const maxs = movs.map(m => m.stock_nuevo || 0); const sm = Math.max(...maxs, item.stock);
-        if (sm === 0) return false;
-        return (item.stock / sm) * 100 <= this.state.config.porcentaje_critico;
-    },
-
-    renderAlertas(criticos) {
-        const c = document.getElementById('alertas-stock'); const { inventario, config } = this.state;
-        const hoy = new Date(); const lim = new Date(hoy); lim.setDate(lim.getDate() + (config.dias_vencimiento || 30));
-        const porVencer = inventario.filter(i => { if (!i.vencimiento) return false; const v = new Date(i.vencimiento + 'T00:00:00'); return v >= hoy && v <= lim && !this.esStockCritico(i); });
-        const vencidos = inventario.filter(i => { if (!i.vencimiento) return false; return new Date(i.vencimiento + 'T00:00:00') < hoy && !this.esStockCritico(i); });
-        const cIds = new Set(criticos.map(i => i.id));
-        const pvf = porVencer.filter(i => !cIds.has(i.id)); const vf = vencidos.filter(i => !cIds.has(i.id));
-        const total = criticos.length + pvf.length + vf.length;
-        if (total === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.check}</div><p>NO HAY ALERTAS.</p></div>`; return; }
-        let h = '<div class="table-container"><table><thead><tr><th>INSUMO</th><th class="text-center">STOCK</th><th class="text-center">ANAQUEL</th><th class="text-center">VENC.</th><th class="text-center">ALERTA</th></tr></thead><tbody>';
-        criticos.forEach(item => { const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let ta = ''; if (venc) ta = '<span class="badge badge-danger">VENCIDO</span> <span class="badge badge-danger">STOCK CRÍTICO</span>'; else if (vp) ta = '<span class="badge badge-danger">STOCK CRÍTICO</span> <span class="badge badge-warning">POR VENCER</span>'; else ta = '<span class="badge badge-danger">STOCK CRÍTICO</span>'; h += `<tr class="stock-critical"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'}</td><td class="text-center">${ta}</td></tr>`; });
-        vf.forEach(item => { h += `<tr class="stock-critical"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'}</td><td class="text-center"><span class="badge badge-danger">VENCIDO</span></td></tr>`; });
-        pvf.forEach(item => { const dr = Math.ceil((new Date(item.vencimiento + 'T00:00:00') - hoy) / 86400000); h += `<tr class="stock-warning"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'} <small>(${dr} DÍAS)</small></td><td class="text-center"><span class="badge badge-warning">POR VENCER</span></td></tr>`; });
-        h += '</tbody></table></div>'; c.innerHTML = h;
-        if (total > 10) { c.innerHTML += `<p style="margin-top:10px;font-size:11px;color:#888;text-align:center;">MOSTRANDO LAS PRIMERAS 10 DE ${total} ALERTAS. <a href="#" onclick="App.showInventario();return false;" style="color:var(--primary);">VER TODAS →</a></p>`; }
-    },
-
-    async showInventario() { UI.setActiveSection('inventario'); await this.loadAllData(); this.renderInventario(); },
-    renderInventario() {
-        const sc = document.getElementById('filtro-stock-critico')?.checked ?? false; const pv = document.getElementById('filtro-por-vencer')?.checked ?? false;
-        const vc = document.getElementById('filtro-vencidos')?.checked ?? false; const ninguno = !sc && !pv && !vc;
-        const hoy = new Date(); const lim = new Date(hoy); lim.setDate(lim.getDate() + (this.state.config.dias_vencimiento || 30));
-        let items = [...this.state.inventario]; let filtrados = [];
-        if (ninguno) { filtrados = items; } else { items.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let inc = false; if (sc && ec && !venc) inc = true; if (pv && vp && !ec) inc = true; if (vc && venc) inc = true; if (ec && venc && (sc || vc)) inc = true; if (inc) filtrados.push(item); }); }
-        document.getElementById('contador-inventario').textContent = filtrados.length;
-        const c = document.getElementById('tabla-inventario'); if (filtrados.length === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.box}</div><p>SIN RESULTADOS.</p></div>`; return; }
-        const esB = window.currentBodega === 'BOTIQUIN';
-        let th = esB ? '<th>NOMBRE</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">CB</th><th class="text-center">ACC.</th>' : '<th>NOMBRE</th><th class="text-center">ANAQUEL</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">CB</th><th class="text-center">ACC.</th>';
-        let h = `<table><thead><tr>${th}</tr></thead><tbody>`;
-        filtrados.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let cl = ''; if (venc) cl = 'stock-critical'; else if (ec) cl = 'stock-critical'; else if (vp) cl = 'stock-warning'; h += `<tr class="${cl}"><td><strong>${item.nombre}</strong></td>${esB ? '' : `<td class="text-center">${item.anaquel}</td>`}<td class="text-center">${item.stock}</td><td class="text-center">${item.unidad||''}</td><td class="text-center">${item.lote||'-'}</td><td class="text-center">${item.vencimiento||'-'}${venc?' <span class="badge badge-danger">VENC</span>':''}${vp&&!ec?' <span class="badge badge-warning">PRONT</span>':''}</td><td class="text-center">${item.codigo_barras ? `<span class="badge badge-info">${item.codigo_barras}</span>` : '-'}</td><td class="text-center"><button class="btn btn-warning btn-sm" onclick="App.editarInsumo(${item.id})">${UI.icons.edit}</button><button class="btn btn-danger btn-sm" onclick="App.eliminarInsumo(${item.id})">${UI.icons.trash}</button></td></tr>`; });
-        h += '</tbody></table>'; c.innerHTML = h;
-    },
-
-    async showMovimientos() { UI.setActiveSection('movimientos'); UI.showLoading('tabla-movimientos'); try { await this.loadAllData(); this.cargarFiltroUsuarios(); this.renderMovimientos(); } catch (e) { document.getElementById('tabla-movimientos').innerHTML = '<div class="empty-state"><p>ERROR AL CARGAR.</p></div>'; } },
-    cargarFiltroUsuarios() { const s = document.getElementById('filtro-usuario-movimiento'); if (!s) return; const us = [...new Set(this.state.movimientos.map(m => m.usuario).filter(Boolean))].sort(); s.innerHTML = '<option value="TODOS">TODOS LOS USUARIOS</option>'; us.forEach(u => { s.innerHTML += `<option value="${u}">${u}</option>`; }); },
-    renderMovimientos() {
-        const ft = document.getElementById('busqueda-movimientos')?.value?.trim().toLowerCase() || ''; const fTipo = document.getElementById('filtro-tipo-movimiento')?.value || 'TODOS'; const fUsr = document.getElementById('filtro-usuario-movimiento')?.value || 'TODOS';
-        let movs = [...this.state.movimientos]; if (fTipo !== 'TODOS') movs = movs.filter(m => m.tipo === fTipo); if (fUsr !== 'TODOS') movs = movs.filter(m => (m.usuario || 'SISTEMA') === fUsr);
-        if (ft) movs = movs.filter(m => (m.insumo&&m.insumo.toLowerCase().includes(ft))||(m.anaquel&&m.anaquel.toLowerCase().includes(ft))||(m.comentarios&&m.comentarios.toLowerCase().includes(ft)));
-        const c = document.getElementById('tabla-movimientos'); if (movs.length === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.list}</div><p>SIN MOVIMIENTOS.</p></div>`; return; }
-        let h = '<div class="table-container"><table><thead><tr><th>USUARIO / FECHA</th><th class="text-center">TIPO</th><th>INFO.</th><th class="text-center">CANT.</th><th class="text-center">STOCK ANT.</th><th class="text-center">STOCK NUEVO</th><th class="text-center">ANAQUEL</th><th>COMENTARIOS</th></tr></thead><tbody>';
-        movs.forEach(mov => { const f = new Date(mov.fecha); const co = this.getColorTipo(mov.tipo); const tf = this.formatearTipo(mov.tipo); const usr = mov.usuario || 'SISTEMA'; h += `<tr><td>${usr} - ${f.toLocaleString('es-CL')}</td><td class="text-center"><span class="badge" style="background:${co};">${tf}</span></td><td>${mov.insumo||'-'}</td><td class="text-center">${mov.cantidad||'-'}</td><td class="text-center">${mov.stock_anterior!=null?mov.stock_anterior:'-'}</td><td class="text-center">${mov.stock_nuevo!=null?mov.stock_nuevo:'-'}</td><td class="text-center">${mov.anaquel||'-'}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mov.comentarios||''}">${mov.comentarios||''}</td></tr>`; });
-        h += '</tbody></table></div>'; c.innerHTML = h;
-    },
-    getColorTipo(t) { const c = {'INGRESO':'#27ae60','SALIDA':'#c0392b','EDICION':'#2980b9','ELIMINACION':'#e74c3c','CREACION_SECCION':'#8e44ad','ELIMINACION_SECCION':'#c0392b','CREACION_UNIDAD':'#16a085','ELIMINACION_UNIDAD':'#e67e22'}; return c[t]||'#6c757d'; },
-    formatearTipo(t) { const tf = {'INGRESO':'INGRESO','SALIDA':'SALIDA','EDICION':'EDICIÓN','ELIMINACION':'ELIMINACIÓN','CREACION_SECCION':'CREACIÓN SECCIÓN','ELIMINACION_SECCION':'ELIMINACIÓN SECCIÓN','CREACION_UNIDAD':'CREACIÓN UNIDAD','ELIMINACION_UNIDAD':'ELIMINACIÓN UNIDAD'}; return tf[t]||t; },
-
-    showIngresoModal() {
-        const esBotiquin = window.currentBodega === 'BOTIQUIN';
-        const anaqueles = this.state.secciones.map(s => s.seccion + s.anaquel).sort();
-        const unidades = this.state.unidades.map(u => u.nombre).sort();
-        const esMovil = window.innerWidth <= 768;
-        const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="ing-anaquel"><option value="">SELECCIONE...</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select>${anaqueles.length===0?'<small style="color:#c0392b;">NO HAY ANAQUELES.</small>':''}</div>`;
-        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.abrirEscanner('ingreso')" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
-        UI.openModal(`<h2>NUEVO INGRESO</h2>${botonEscaner}<div id="scanner-container-ingreso" style="display:none;margin-bottom:10px;"></div><div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="ing-codigo-barras" placeholder="ESCANEE O INGRESE EL CÓDIGO..." onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasIngreso();}"></div>${campoAnaquel}<div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="ing-lote" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
-        setTimeout(() => { document.addEventListener('click', function cerrar(e) { const inp = document.getElementById('ing-nombre'); const sug = document.getElementById('sugerencias-ing'); if (inp && sug && e.target !== inp && !sug.contains(e.target)) sug.style.display = 'none'; }); }, 100);
-    },
-
-    showSalidaModal() {
-        const anaqueles = this.state.secciones.map(s => s.seccion + s.anaquel).sort();
-        const esBotiquin = window.currentBodega === 'BOTIQUIN';
-        const esMovil = window.innerWidth <= 768;
-        const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>FILTRAR POR ANAQUEL</label><select id="sal-anaquel-filtro" onchange="App.filtrarPorAnaquelSalida()"><option value="">TODOS</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select></div>`;
-        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.abrirEscanner('salida')" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
-        UI.openModal(`<h2>NUEVA SALIDA</h2>${botonEscaner}<div id="scanner-container-salida" style="display:none;margin-bottom:10px;"></div>${campoAnaquel}<div class="form-group" style="position:relative;"><label>BUSCAR POR NOMBRE</label><input type="text" id="sal-busqueda" placeholder="ESCRIBA EL NOMBRE..." autocomplete="off" onkeyup="App.buscarCoincidenciasSalida()" onfocus="App.buscarCoincidenciasSalida()" style="text-transform:uppercase;"><div id="sugerencias-sal" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;"></div></div><div id="resultados-busqueda"><p style="color:#666;padding:15px;">BUSQUE UN INSUMO PARA RETIRAR.</p></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
-    },
-
-    abrirEscanner(tipo) {
-        const containerId = tipo === 'edicion' ? 'scanner-container-edicion' : `scanner-container-${tipo}`;
-        const container = document.getElementById(containerId);
+    renderAlertasStock(insumos) {
+        const container = document.getElementById('alertas-stock');
         if (!container) return;
-        container.style.display = 'block';
-        container.innerHTML = '';
-        const key = `html5QrCode${tipo.charAt(0).toUpperCase() + tipo.slice(1)}`;
-        if (window[key]) { window[key].stop(); }
-        const html5QrCode = new Html5Qrcode(containerId);
-        html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 } }, (decodedText) => {
-            html5QrCode.stop();
+        
+        if (!insumos || insumos.length === 0) {
+            container.innerHTML = `<div class="empty-state"><p style="color: #27ae60;">✅ No hay insumos con stock crítico</p></div>`;
+            return;
+        }
+        
+        let html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:10px;">';
+        insumos.slice(0, 10).forEach(item => {
+            const porcentaje = Math.round((item.stock / (CONFIG.porcentajeCritico || 20)) * 100);
+            html += `
+                <div style="background:#fde8e8; padding:12px 15px; border-radius:6px; border-left:4px solid #c0392b;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong style="font-size:13px; color:#333;">${item.nombre}</strong>
+                        <span style="font-size:12px; color:#c0392b; font-weight:bold;">${item.stock} ${item.unidad || ''}</span>
+                    </div>
+                    <div style="font-size:11px; color:#666; margin-top:4px;">
+                        ${item.seccion} - ${item.anaquel}
+                        ${item.vencimiento ? ` | Vence: ${new Date(item.vencimiento).toLocaleDateString('es-CL')}` : ''}
+                    </div>
+                    <div style="width:100%; height:4px; background:#f0f0f0; border-radius:2px; margin-top:6px; overflow:hidden;">
+                        <div style="width:${Math.min(porcentaje, 100)}%; height:100%; background:#c0392b; border-radius:2px;"></div>
+                    </div>
+                </div>
+            `;
+        });
+        if (insumos.length > 10) {
+            html += `<div style="text-align:center; padding:10px; color:#666; font-size:12px; grid-column:1/-1;">
+                Y ${insumos.length - 10} más...
+            </div>`;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+    },
+
+    renderMovimientosRecientes() {
+        const container = document.querySelector('#section-dashboard .section:last-child');
+        if (!container) return;
+        
+        if (!this.movimientos || this.movimientos.length === 0) {
+            container.innerHTML = `<h2>MOVIMIENTOS RECIENTES</h2><div class="empty-state"><p>No hay movimientos registrados</p></div>`;
+            return;
+        }
+        
+        let html = `<h2>MOVIMIENTOS RECIENTES</h2><div class="table-responsive"><div class="table-container"><table>
+            <thead><tr>
+                <th>FECHA</th><th>TIPO</th><th>INSUMO</th><th>CANTIDAD</th><th>USUARIO</th>
+            </tr></thead><tbody>`;
+        
+        this.movimientos.slice(0, 15).forEach(mov => {
+            const fecha = new Date(mov.fecha).toLocaleString('es-CL');
+            const tipoClass = mov.tipo === 'INGRESO' ? 'badge-success' : 
+                             mov.tipo === 'SALIDA' ? 'badge-danger' : 'badge-warning';
+            html += `<tr>
+                <td>${fecha}</td>
+                <td><span class="badge ${tipoClass}">${mov.tipo}</span></td>
+                <td>${mov.insumo || '-'}</td>
+                <td>${mov.cantidad || 0}</td>
+                <td>${mov.usuario || '-'}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+        html += `<div style="margin-top:10px; text-align:right;">
+            <button class="btn btn-primary btn-sm" onclick="App.mostrarVista('movimientos')">VER TODOS →</button>
+        </div>`;
+        container.innerHTML = html;
+    },
+
+    // ==================== INVENTARIO ====================
+    renderInventario() {
+        const container = document.getElementById('tabla-inventario');
+        if (!container) return;
+        
+        const stockCritico = document.getElementById('filtro-stock-critico')?.checked || false;
+        const porVencer = document.getElementById('filtro-por-vencer')?.checked || false;
+        const vencidos = document.getElementById('filtro-vencidos')?.checked || false;
+        
+        let items = [...this.inventario];
+        
+        // Aplicar filtros
+        if (stockCritico) {
+            items = items.filter(item => item.stock <= CONFIG.porcentajeCritico);
+        }
+        if (porVencer) {
+            const hoy = new Date();
+            const diasVencimiento = CONFIG.diasVencimiento || 30;
+            items = items.filter(item => {
+                if (!item.vencimiento) return false;
+                const venc = new Date(item.vencimiento);
+                const diff = Math.ceil((venc - hoy) / (1000 * 60 * 60 * 24));
+                return diff >= 0 && diff <= diasVencimiento;
+            });
+        }
+        if (vencidos) {
+            const hoy = new Date();
+            items = items.filter(item => {
+                if (!item.vencimiento) return false;
+                const venc = new Date(item.vencimiento);
+                return venc < hoy;
+            });
+        }
+        
+        // Actualizar contador
+        document.getElementById('contador-inventario').textContent = items.length;
+        
+        if (items.length === 0) {
+            container.innerHTML = `<div class="empty-state">
+                <div style="font-size:40px; margin-bottom:10px;">📦</div>
+                <p>No hay insumos que coincidan con los filtros seleccionados</p>
+            </div>`;
+            return;
+        }
+        
+        let html = `<table>
+            <thead><tr>
+                <th>NOMBRE</th>
+                <th>SECCIÓN</th>
+                <th>ANAQUEL</th>
+                <th>STOCK</th>
+                <th>UNIDAD</th>
+                <th>LOTE</th>
+                <th>VENCIMIENTO</th>
+                <th>CÓDIGO</th>
+                <th>ACCIONES</th>
+            </tr></thead><tbody>`;
+        
+        items.forEach(item => {
+            const isCritical = item.stock <= CONFIG.porcentajeCritico;
+            const hoy = new Date();
+            const vence = item.vencimiento ? new Date(item.vencimiento) : null;
+            const isExpired = vence && vence < hoy;
+            const isNearExpiry = vence && !isExpired && 
+                Math.ceil((vence - hoy) / (1000 * 60 * 60 * 24)) <= CONFIG.diasVencimiento;
+            
+            let rowClass = '';
+            if (isCritical) rowClass = 'stock-critical';
+            else if (isExpired) rowClass = 'stock-warning';
+            else if (isNearExpiry) rowClass = 'stock-warning';
+            
+            html += `<tr class="${rowClass}">
+                <td><strong>${item.nombre || '-'}</strong></td>
+                <td>${item.seccion || '-'}</td>
+                <td>${item.anaquel || '-'}</td>
+                <td><strong>${item.stock || 0}</strong></td>
+                <td>${item.unidad || '-'}</td>
+                <td>${item.lote || '-'}</td>
+                <td>${item.vencimiento ? new Date(item.vencimiento).toLocaleDateString('es-CL') : '-'}</td>
+                <td>${item.codigo_barras ? `<span style="font-family:monospace; font-size:11px;">${item.codigo_barras}</span>` : '-'}</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="App.mostrarEditarInsumo('${item.id}')" title="Editar">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="App.eliminarInsumo('${item.id}')" title="Eliminar">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                    </button>
+                </td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    },
+
+    // ==================== MOVIMIENTOS ====================
+    async renderMovimientos() {
+        const container = document.getElementById('tabla-movimientos');
+        if (!container) return;
+        
+        try {
+            const tipo = document.getElementById('filtro-tipo-movimiento')?.value || 'TODOS';
+            const usuario = document.getElementById('filtro-usuario-movimiento')?.value || 'TODOS';
+            const busqueda = document.getElementById('busqueda-movimientos')?.value?.toLowerCase() || '';
+            
+            let movimientos = await DB.getTodosMovimientos(this.bodega);
+            this.movimientos = movimientos;
+            
+            // Poblar filtro de usuarios
+            const usuariosSelect = document.getElementById('filtro-usuario-movimiento');
+            if (usuariosSelect && usuariosSelect.options.length <= 1) {
+                const usuarios = [...new Set(movimientos.map(m => m.usuario).filter(Boolean))];
+                usuarios.forEach(u => {
+                    const option = document.createElement('option');
+                    option.value = u;
+                    option.textContent = u;
+                    usuariosSelect.appendChild(option);
+                });
+            }
+            
+            // Aplicar filtros
+            if (tipo !== 'TODOS') {
+                movimientos = movimientos.filter(m => m.tipo === tipo);
+            }
+            if (usuario !== 'TODOS') {
+                movimientos = movimientos.filter(m => m.usuario === usuario);
+            }
+            if (busqueda) {
+                movimientos = movimientos.filter(m => 
+                    (m.insumo && m.insumo.toLowerCase().includes(busqueda)) ||
+                    (m.anaquel && m.anaquel.toLowerCase().includes(busqueda)) ||
+                    (m.comentarios && m.comentarios.toLowerCase().includes(busqueda))
+                );
+            }
+            
+            if (movimientos.length === 0) {
+                container.innerHTML = `<div class="empty-state">
+                    <div style="font-size:40px; margin-bottom:10px;">📋</div>
+                    <p>No hay movimientos que coincidan con los filtros</p>
+                </div>`;
+                return;
+            }
+            
+            let html = `<table>
+                <thead><tr>
+                    <th>FECHA</th>
+                    <th>TIPO</th>
+                    <th>INSUMO</th>
+                    <th>CANTIDAD</th>
+                    <th>STOCK ANTERIOR</th>
+                    <th>STOCK NUEVO</th>
+                    <th>ANAQUEL</th>
+                    <th>USUARIO</th>
+                    <th>COMENTARIOS</th>
+                </tr></thead><tbody>`;
+            
+            movimientos.forEach(mov => {
+                const fecha = new Date(mov.fecha).toLocaleString('es-CL');
+                const tipoClass = mov.tipo === 'INGRESO' ? 'badge-success' : 
+                                 mov.tipo === 'SALIDA' ? 'badge-danger' : 'badge-warning';
+                html += `<tr>
+                    <td style="white-space:nowrap; font-size:11px;">${fecha}</td>
+                    <td><span class="badge ${tipoClass}">${mov.tipo}</span></td>
+                    <td>${mov.insumo || '-'}</td>
+                    <td>${mov.cantidad || 0}</td>
+                    <td>${mov.stock_anterior !== null ? mov.stock_anterior : '-'}</td>
+                    <td>${mov.stock_nuevo !== null ? mov.stock_nuevo : '-'}</td>
+                    <td>${mov.anaquel || '-'}</td>
+                    <td>${mov.usuario || '-'}</td>
+                    <td style="font-size:11px; color:#666;">${mov.comentarios || '-'}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+        } catch (error) {
+            console.error('Error renderizando movimientos:', error);
+            container.innerHTML = `<div class="empty-state"><p>Error al cargar movimientos</p></div>`;
+        }
+    },
+
+    // ==================== MODALES ====================
+    mostrarModalIngreso() {
+        const secciones = this.secciones;
+        const unidades = this.unidades || [];
+        
+        let seccionesOptions = secciones.map(s => 
+            `<option value="${s.seccion}">${s.seccion} - ${s.anaquel}</option>`
+        ).join('');
+        
+        let unidadesOptions = unidades.map(u => 
+            `<option value="${u.nombre}">${u.nombre}</option>`
+        ).join('');
+        
+        const content = `
+            <h2>📦 NUEVO INGRESO</h2>
+            <form id="form-ingreso" onsubmit="App.procesarIngreso(event)">
+                <div class="form-group">
+                    <label>NOMBRE DEL INSUMO *</label>
+                    <input type="text" id="ingreso-nombre" placeholder="EJ: PARACETAMOL 500MG" required style="text-transform:uppercase;">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>SECCIÓN *</label>
+                        <select id="ingreso-seccion" required>
+                            <option value="">SELECCIONE...</option>
+                            ${seccionesOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>ANAQUEL *</label>
+                        <input type="text" id="ingreso-anaquel" placeholder="EJ: A1" required style="text-transform:uppercase;">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>CANTIDAD *</label>
+                        <input type="number" id="ingreso-cantidad" placeholder="0" required min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>UNIDAD</label>
+                        <select id="ingreso-unidad">
+                            <option value="">SELECCIONE...</option>
+                            ${unidadesOptions}
+                            <option value="OTRO">OTRO (ESPECIFICAR)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>LOTE</label>
+                        <input type="text" id="ingreso-lote" placeholder="NÚMERO DE LOTE" style="text-transform:uppercase;">
+                    </div>
+                    <div class="form-group">
+                        <label>VENCIMIENTO</label>
+                        <input type="date" id="ingreso-vencimiento">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>CÓDIGO DE BARRAS</label>
+                    <input type="text" id="ingreso-codigo" placeholder="CÓDIGO DE BARRAS (OPCIONAL)">
+                    <div style="margin-top:5px;">
+                        <button type="button" class="btn btn-sm btn-info" onclick="App.escaneoCodigoBarras('ingreso-codigo')">
+                            📷 ESCANEAR
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>COMENTARIOS</label>
+                    <textarea id="ingreso-comentarios" placeholder="COMENTARIOS OBSERVACIONES"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button>
+                    <button type="submit" class="btn btn-success">✅ REGISTRAR INGRESO</button>
+                </div>
+            </form>
+        `;
+        UI.openModal(content);
+    },
+
+    mostrarModalSalida() {
+        const content = `
+            <h2>📤 NUEVA SALIDA</h2>
+            <form id="form-salida" onsubmit="App.procesarSalida(event)">
+                <div class="form-group">
+                    <label>BUSCAR INSUMO *</label>
+                    <input type="text" id="salida-busqueda" placeholder="ESCRIBA EL NOMBRE DEL INSUMO..." 
+                           oninput="App.buscarInsumosParaSalida(this.value)">
+                    <div id="salida-resultados" style="margin-top:5px; max-height:200px; overflow-y:auto; border:1px solid #e0e0e0; border-radius:5px; display:none;"></div>
+                </div>
+                <div id="salida-info" style="display:none; background:#f0f4ff; padding:10px; border-radius:5px; margin-bottom:10px;">
+                    <p><strong>INSUMO:</strong> <span id="salida-nombre"></span></p>
+                    <p><strong>STOCK DISPONIBLE:</strong> <span id="salida-stock"></span></p>
+                    <p><strong>ANAQUEL:</strong> <span id="salida-anaquel"></span></p>
+                </div>
+                <div class="form-group">
+                    <label>CANTIDAD A RETIRAR *</label>
+                    <input type="number" id="salida-cantidad" placeholder="0" required min="1">
+                </div>
+                <div class="form-group">
+                    <label>COMENTARIOS</label>
+                    <textarea id="salida-comentarios" placeholder="MOTIVO DE LA SALIDA"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button>
+                    <button type="submit" class="btn btn-danger">⛔ REGISTRAR SALIDA</button>
+                </div>
+            </form>
+        `;
+        UI.openModal(content);
+    },
+
+    async buscarInsumosParaSalida(busqueda) {
+        const container = document.getElementById('salida-resultados');
+        if (!busqueda || busqueda.length < 2) {
             container.style.display = 'none';
-            const codigoLimpio = this.limpiarCodigoBarras(decodedText);
-            if (tipo === 'ingreso') { document.getElementById('ing-codigo-barras').value = codigoLimpio; this.buscarPorCodigoBarrasIngreso(); }
-            else if (tipo === 'salida') { this.buscarPorCodigoBarrasSalida(codigoLimpio); }
-            else if (tipo === 'edicion') { document.getElementById('edit-codigo-barras').value = codigoLimpio; this.buscarPorCodigoBarrasEdicion(); }
-            window[key] = null;
-        }, (errorMessage) => { }).catch(err => { container.style.display = 'none'; UI.showToast('NO SE PUDO ABRIR LA CÁMARA.', 'warning'); });
-        window[key] = html5QrCode;
-    },
-
-    async buscarPorCodigoBarrasIngreso() {
-        const codigo = this.limpiarCodigoBarras(document.getElementById('ing-codigo-barras').value);
-        if (!codigo) return;
-        document.getElementById('ing-codigo-barras').value = codigo;
-        try {
-            const resultados = await DB.buscarPorCodigoBarras(codigo);
-            if (resultados.length > 0) {
-                const item = resultados[0];
-                document.getElementById('ing-nombre').value = item.nombre;
-                document.getElementById('ing-unidad').value = item.unidad || '';
-                if (document.getElementById('ing-anaquel')) document.getElementById('ing-anaquel').value = item.anaquel;
-                document.getElementById('ing-lote').value = item.lote || '';
-                document.getElementById('ing-vencimiento').value = item.vencimiento || '';
-                UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
-            } else { UI.showToast('CÓDIGO NUEVO. COMPLETE LOS DATOS.', 'warning'); }
-        } catch (e) { UI.showToast('ERROR AL BUSCAR CÓDIGO', 'error'); }
-    },
-
-    async buscarPorCodigoBarrasSalida(codigo) {
-        const codigoLimpio = this.limpiarCodigoBarras(codigo);
-        if (!codigoLimpio) return;
-        try {
-            const resultados = await DB.buscarPorCodigoBarras(codigoLimpio);
-            if (resultados.length > 0) {
-                const itemsConStock = resultados.filter(i => i.stock > 0);
-                if (itemsConStock.length === 0) { UI.showToast('SIN STOCK DISPONIBLE', 'warning'); return; }
-                if (itemsConStock.length === 1) { this.prepararSalida(itemsConStock[0].id); return; }
-                let h = '<div style="max-height:400px;overflow-y:auto;">';
-                itemsConStock.forEach(i => { h += `<div style="border:1px solid #ddd;padding:12px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;"><div><strong>${i.nombre}</strong><br><small>STOCK: ${i.stock} ${i.unidad||''} | ${i.anaquel}${i.lote?` | LOTE: ${i.lote}`:''}${i.vencimiento?` | VENC: ${i.vencimiento}`:''}</small></div><button class="btn btn-danger btn-sm" onclick="App.prepararSalida(${i.id})">RETIRAR</button></div>`; });
-                h += '</div>';
-                UI.openModal(`<h2>SELECCIONE LOTE</h2>${h}<div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
-            } else { UI.showToast('CÓDIGO NO ENCONTRADO', 'warning'); }
-        } catch (e) { UI.showToast('ERROR AL BUSCAR', 'error'); }
-    },
-
-    async buscarPorCodigoBarrasEdicion() {
-        const codigo = this.limpiarCodigoBarras(document.getElementById('edit-codigo-barras').value);
-        if (!codigo) return;
-        document.getElementById('edit-codigo-barras').value = codigo;
-        try {
-            const resultados = await DB.buscarPorCodigoBarras(codigo);
-            if (resultados.length > 0) {
-                const item = resultados[0];
-                document.getElementById('edit-nombre').value = item.nombre;
-                document.getElementById('edit-unidad').value = item.unidad || '';
-                if (document.getElementById('edit-anaquel')) document.getElementById('edit-anaquel').value = item.anaquel;
-                document.getElementById('edit-lote').value = item.lote || '';
-                document.getElementById('edit-vencimiento').value = item.vencimiento || '';
-                UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
-            } else { UI.showToast('CÓDIGO NUEVO.', 'warning'); }
-        } catch (e) { UI.showToast('ERROR AL BUSCAR CÓDIGO', 'error'); }
-    },
-
-    async buscarCoincidencias(tipo) {
-        const input = document.getElementById(tipo === 'ing' ? 'ing-nombre' : 'sal-busqueda');
-        const sugerencias = document.getElementById(tipo === 'ing' ? 'sugerencias-ing' : 'sugerencias-sal');
-        if (!input || !sugerencias) return;
-        const busqueda = input.value.trim(); if (busqueda.length < 1) { sugerencias.style.display = 'none'; return; }
+            return;
+        }
+        
         try {
             const resultados = await DB.buscarInsumosNombre(busqueda);
-            if (resultados.length === 0) { sugerencias.style.display = 'none'; return; }
-            let html = ''; resultados.forEach(item => { const ne = item.nombre.replace(/'/g, "\\'"); const ue = (item.unidad || '').replace(/'/g, "\\'"); html += `<div onclick="App.seleccionarSugerencia('${tipo}', '${ne}', '${ue}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;" onmouseover="this.style.background='#eef2f7'" onmouseout="this.style.background='white'"><strong>${item.nombre}</strong>${item.unidad ? `<span style="color:#888; font-size:11px;">(${item.unidad})</span>` : ''}</div>`; });
-            sugerencias.innerHTML = html; sugerencias.style.display = 'block';
-        } catch (error) { console.error('Error al buscar coincidencias:', error); }
+            if (resultados.length === 0) {
+                container.innerHTML = '<div style="padding:10px; color:#666;">No se encontraron insumos</div>';
+                container.style.display = 'block';
+                return;
+            }
+            
+            let html = '';
+            resultados.forEach(item => {
+                html += `<div style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0;"
+                         onclick="App.seleccionarInsumoSalida('${item.nombre}')">
+                    <strong>${item.nombre}</strong>
+                    <span style="color:#666; font-size:12px;">${item.unidad || ''}</span>
+                </div>`;
+            });
+            container.innerHTML = html;
+            container.style.display = 'block';
+        } catch (error) {
+            console.error('Error buscando insumos:', error);
+        }
     },
 
-    seleccionarSugerencia(tipo, nombre, unidad) {
-        if (tipo === 'ing') { document.getElementById('ing-nombre').value = nombre; if (unidad) { const s = document.getElementById('ing-unidad'); for (let i = 0; i < s.options.length; i++) { if (s.options[i].value === unidad) { s.selectedIndex = i; break; } } } document.getElementById('sugerencias-ing').style.display = 'none'; }
-        else { document.getElementById('sal-busqueda').value = nombre; document.getElementById('sugerencias-sal').style.display = 'none'; this.buscarInsumoSalida(); }
+    async seleccionarInsumoSalida(nombre) {
+        const inventario = this.inventario.filter(i => i.nombre === nombre);
+        if (inventario.length === 0) {
+            UI.showToast('Insumo no encontrado', 'error');
+            return;
+        }
+        
+        // Mostrar el primero con stock
+        const item = inventario[0];
+        document.getElementById('salida-nombre').textContent = item.nombre;
+        document.getElementById('salida-stock').textContent = `${item.stock} ${item.unidad || ''}`;
+        document.getElementById('salida-anaquel').textContent = `${item.seccion} - ${item.anaquel}`;
+        document.getElementById('salida-info').style.display = 'block';
+        document.getElementById('salida-resultados').style.display = 'none';
+        document.getElementById('salida-cantidad').focus();
+        
+        // Guardar ID del insumo seleccionado
+        document.getElementById('form-salida').dataset.itemId = item.id;
     },
 
-    async procesarIngreso() {
-        const esBotiquin = window.currentBodega === 'BOTIQUIN';
-        const nombre = document.getElementById('ing-nombre').value.trim().toUpperCase();
-        const anaquel = esBotiquin ? 'BOTIQUIN' : document.getElementById('ing-anaquel').value;
-        const cantidad = parseInt(document.getElementById('ing-cantidad').value);
-        const unidad = document.getElementById('ing-unidad').value;
-        const lote = document.getElementById('ing-lote').value.trim().toUpperCase();
-        const vencimiento = document.getElementById('ing-vencimiento').value;
-        const codigoBarras = this.limpiarCodigoBarras(document.getElementById('ing-codigo-barras').value);
-        const comentarios = document.getElementById('ing-comentarios').value.trim().toUpperCase();
-        if (!nombre || (!esBotiquin && !anaquel) || !cantidad || cantidad <= 0) { UI.showToast('COMPLETE LOS CAMPOS (*)', 'error'); return; }
-        const seccion = esBotiquin ? 'B' : anaquel.charAt(0);
-        try { await DB.procesarIngreso(nombre, seccion, anaquel, cantidad, unidad, lote, vencimiento, codigoBarras || null, comentarios); UI.closeModal(); UI.showToast('INGRESO REGISTRADO', 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); }
+    async procesarIngreso(e) {
+        e.preventDefault();
+        
+        const nombre = document.getElementById('ingreso-nombre').value.trim();
+        const seccion = document.getElementById('ingreso-seccion').value;
+        const anaquel = document.getElementById('ingreso-anaquel').value.trim().toUpperCase();
+        const cantidad = parseInt(document.getElementById('ingreso-cantidad').value);
+        const unidad = document.getElementById('ingreso-unidad').value;
+        const lote = document.getElementById('ingreso-lote').value.trim();
+        const vencimiento = document.getElementById('ingreso-vencimiento').value;
+        const codigo = document.getElementById('ingreso-codigo').value.trim();
+        const comentarios = document.getElementById('ingreso-comentarios').value.trim();
+        
+        if (!nombre || !seccion || !anaquel || !cantidad) {
+            UI.showToast('Complete todos los campos obligatorios', 'error');
+            return;
+        }
+        
+        try {
+            const result = await DB.procesarIngreso(
+                nombre, seccion, anaquel, cantidad, unidad, lote, vencimiento, codigo, comentarios
+            );
+            
+            UI.showToast(`✅ Ingreso registrado: ${nombre} (${cantidad} ${unidad})`, 'success');
+            UI.closeModal();
+            
+            // Recargar datos
+            await this.cargarDatosIniciales();
+            await this.actualizarDashboard();
+            this.renderInventario();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
     },
 
-    buscarCoincidenciasSalida() {
-        const af = document.getElementById('sal-anaquel-filtro')?.value;
-        const input = document.getElementById('sal-busqueda'); const sug = document.getElementById('sugerencias-sal');
-        if (!input || !sug) return;
-        const b = input.value.trim().toLowerCase(); if (b.length < 1) { sug.style.display = 'none'; this.buscarInsumoSalida(); return; }
-        let r = this.state.inventario.filter(i => i.stock > 0 && i.nombre.toLowerCase().includes(b));
-        if (af) r = r.filter(i => i.anaquel === af);
-        if (r.length === 0) { sug.style.display = 'none'; return; }
-        let h = ''; r.slice(0, 10).forEach(i => { h += `<div onclick="App.seleccionarSugerenciaSalida('${i.nombre.replace(/'/g, "\\'")}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;font-size:13px;" onmouseover="this.style.background='#eef2f7'" onmouseout="this.style.background='white'"><strong>${i.nombre}</strong><span style="color:#888;font-size:11px;">STOCK: ${i.stock} | ${i.anaquel}${i.lote?` | LOTE: ${i.lote}`:''}${i.vencimiento?` | VENC: ${i.vencimiento}`:''}${i.codigo_barras?` | CB: ${i.codigo_barras}`:''}</span></div>`; });
-        sug.innerHTML = h; sug.style.display = 'block';
+    async procesarSalida(e) {
+        e.preventDefault();
+        
+        const itemId = document.getElementById('form-salida').dataset.itemId;
+        const cantidad = parseInt(document.getElementById('salida-cantidad').value);
+        const comentarios = document.getElementById('salida-comentarios').value.trim();
+        
+        if (!itemId || !cantidad) {
+            UI.showToast('Seleccione un insumo y cantidad válida', 'error');
+            return;
+        }
+        
+        try {
+            const result = await DB.procesarSalida(itemId, cantidad, comentarios);
+            
+            if (result.eliminado) {
+                UI.showToast(`⛔ Salida registrada: ${result.nombre} - Stock agotado, eliminado`, 'warning');
+            } else {
+                UI.showToast(`⛔ Salida registrada: ${result.nombre} (${cantidad} unidades)`, 'success');
+            }
+            
+            UI.closeModal();
+            
+            // Recargar datos
+            await this.cargarDatosIniciales();
+            await this.actualizarDashboard();
+            this.renderInventario();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
     },
-    seleccionarSugerenciaSalida(nombre) { document.getElementById('sal-busqueda').value = nombre; document.getElementById('sugerencias-sal').style.display = 'none'; this.buscarInsumoSalida(); },
 
-    buscarInsumoSalida() {
-        const af = document.getElementById('sal-anaquel-filtro')?.value; const b = document.getElementById('sal-busqueda').value.trim().toLowerCase();
-        let r = this.state.inventario.filter(i => i.stock > 0); if (af) r = r.filter(i => i.anaquel === af); if (b) r = r.filter(i => i.nombre.toLowerCase().includes(b));
-        const c = document.getElementById('resultados-busqueda'); if (r.length === 0) { c.innerHTML = '<p style="padding:15px;">NO SE ENCONTRARON INSUMOS.</p>'; return; }
-        let h = '<div style="max-height:400px;overflow-y:auto;">';
-        r.forEach(i => { h += `<div style="border:1px solid #ddd;padding:12px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;"><div><strong>${i.nombre}</strong><br><small>STOCK: ${i.stock} ${i.unidad||''} | ANAQUEL: ${i.anaquel}${i.lote?` | LOTE: <span class="badge badge-info">${i.lote}</span>`:''}${i.vencimiento?` | VENC: ${i.vencimiento}`:''}${i.codigo_barras?` | CB: ${i.codigo_barras}`:''}</small></div><button class="btn btn-danger btn-sm" onclick="App.prepararSalida(${i.id})">RETIRAR</button></div>`; });
-        h += '</div>'; c.innerHTML = h;
+    mostrarModalBuscarAnaquel() {
+        const content = `
+            <h2>🔍 BUSCAR POR ANAQUEL</h2>
+            <div class="form-group">
+                <label>ANAQUEL</label>
+                <input type="text" id="buscar-anaquel-input" placeholder="EJ: A1, B3, C2" style="text-transform:uppercase;">
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button>
+                <button type="button" class="btn btn-primary" onclick="App.buscarAnaquel()">🔍 BUSCAR</button>
+            </div>
+            <div id="resultado-anaquel" style="margin-top:15px;"></div>
+        `;
+        UI.openModal(content);
+        
+        // Auto-focus
+        setTimeout(() => document.getElementById('buscar-anaquel-input')?.focus(), 100);
     },
 
-    prepararSalida(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; UI.openModal(`<h2>RETIRAR INSUMO</h2><div style="background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:15px;"><p><strong>INSUMO:</strong> ${i.nombre}</p><p><strong>ANAQUEL:</strong> ${i.anaquel}</p><p><strong>STOCK:</strong> ${i.stock} ${i.unidad||'UNIDADES'}</p>${i.lote?`<p><strong>LOTE:</strong> ${i.lote}</p>`:''}${i.vencimiento?`<p><strong>VENCIMIENTO:</strong> ${i.vencimiento}</p>`:''}${i.codigo_barras?`<p><strong>CB:</strong> ${i.codigo_barras}</p>`:''}</div><div class="form-group"><label>CANTIDAD *</label><input type="number" id="sal-cantidad" value="1" min="1" max="${i.stock}" autofocus></div><div class="form-group"><label>MOTIVO</label><textarea id="sal-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="App.showSalidaModal()">VOLVER</button><button class="btn btn-danger" onclick="App.procesarSalida(${id})">${UI.icons.minus} CONFIRMAR</button></div>`); },
-    async procesarSalida(id) { const c = parseInt(document.getElementById('sal-cantidad').value); const co = document.getElementById('sal-comentarios').value.trim().toUpperCase(); if (!c || c <= 0) { UI.showToast('CANTIDAD INVÁLIDA', 'error'); return; } try { const r = await DB.procesarSalida(id, c, co); UI.closeModal(); UI.showToast('SALIDA REGISTRADA' + (r.stockNuevo <= 5 ? ' - STOCK BAJO' : ''), r.stockNuevo <= 5 ? 'warning' : 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); } },
-
-    showBusquedaAnaquelModal() { if (window.currentBodega === 'BOTIQUIN') return; UI.openModal(`<h2>BUSCAR ANAQUEL</h2><div class="form-group"><label>ANAQUEL</label><select id="bus-anaquel" onchange="App.buscarAnaquel()"><option value="">SELECCIONE...</option>${this.state.secciones.map(s => s.seccion+s.anaquel).sort().map(a => `<option value="${a}">${a}</option>`).join('')}</select></div><div id="resultado-anaquel"></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button></div>`); },
-    buscarAnaquel() { const a = document.getElementById('bus-anaquel').value; if (!a) return; const items = this.state.inventario.filter(i => i.anaquel === a); const c = document.getElementById('resultado-anaquel'); let h = `<h3>ANAQUEL: <span class="badge badge-info">${a}</span></h3>`; if (items.length === 0) h += '<p>VACÍO.</p>'; else { h += '<div class="table-container"><table><thead><tr><th>INSUMO</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th></tr></thead><tbody>'; items.forEach(i => { h += `<tr><td><strong>${i.nombre}</strong></td><td class="text-center">${i.stock}</td><td class="text-center">${i.unidad||''}</td><td class="text-center">${i.lote||'-'}</td><td class="text-center">${i.vencimiento||'-'}</td></tr>`; }); h += '</tbody></table></div>'; } c.innerHTML = h; },
-
-    showGestionSeccionesModal() {
-        const esBotiquin = window.currentBodega === 'BOTIQUIN';
-        let h = '<h2>CONFIGURACIÓN</h2>';
-        if (esBotiquin) { h += '<div id="tab-contenido"></div>'; }
-        else { h += `<div style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid #e0e0e0;"><button class="btn btn-light" onclick="App.mostrarTabConfig('secciones')" id="tab-secciones" style="border-radius:5px 5px 0 0;border:2px solid #e0e0e0;border-bottom:2px solid var(--primary);background:white;font-weight:bold;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> SECCIONES</button><button class="btn btn-light" onclick="App.mostrarTabConfig('unidades')" id="tab-unidades" style="border-radius:5px 5px 0 0;border:2px solid transparent;background:transparent;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> UNIDADES</button></div><div id="tab-contenido"></div>`; }
-        UI.openModal(h); if (esBotiquin) { this.mostrarContenidoUnidades(); } else { this.mostrarTabConfig('secciones'); }
+    async buscarAnaquel() {
+        const input = document.getElementById('buscar-anaquel-input');
+        const container = document.getElementById('resultado-anaquel');
+        const anaquel = input?.value?.trim().toUpperCase() || '';
+        
+        if (!anaquel) {
+            UI.showToast('Ingrese un anaquel', 'warning');
+            return;
+        }
+        
+        const resultados = this.inventario.filter(item => 
+            item.anaquel && item.anaquel.toUpperCase().includes(anaquel)
+        );
+        
+        if (resultados.length === 0) {
+            container.innerHTML = `<div class="empty-state"><p>No se encontraron insumos en el anaquel ${anaquel}</p></div>`;
+            return;
+        }
+        
+        let html = `<h3 style="margin-bottom:10px;">📦 ${resultados.length} insumos encontrados</h3>
+            <div class="table-responsive"><div class="table-container"><table>
+            <thead><tr><th>NOMBRE</th><th>SECCIÓN</th><th>STOCK</th><th>UNIDAD</th></tr></thead><tbody>`;
+        
+        resultados.forEach(item => {
+            html += `<tr>
+                <td>${item.nombre}</td>
+                <td>${item.seccion || '-'}</td>
+                <td><strong>${item.stock || 0}</strong></td>
+                <td>${item.unidad || '-'}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div></div>';
+        container.innerHTML = html;
     },
-    mostrarTabConfig(tab) { if (window.currentBodega === 'BOTIQUIN') { this.mostrarContenidoUnidades(); return; } document.getElementById('tab-secciones').style.borderBottom = tab === 'secciones' ? '2px solid var(--primary)' : '2px solid transparent'; document.getElementById('tab-secciones').style.background = tab === 'secciones' ? 'white' : 'transparent'; document.getElementById('tab-secciones').style.fontWeight = tab === 'secciones' ? 'bold' : 'normal'; document.getElementById('tab-unidades').style.borderBottom = tab === 'unidades' ? '2px solid var(--primary)' : '2px solid transparent'; document.getElementById('tab-unidades').style.background = tab === 'unidades' ? 'white' : 'transparent'; document.getElementById('tab-unidades').style.fontWeight = tab === 'unidades' ? 'bold' : 'normal'; if (tab === 'secciones') this.mostrarContenidoSecciones(); else this.mostrarContenidoUnidades(); },
-    mostrarContenidoSecciones() { let html = ''; const ag = {}; this.state.secciones.forEach(s => { if (!ag[s.seccion]) ag[s.seccion] = { d: s.descripcion || 'SIN DESCRIPCIÓN', a: [] }; ag[s.seccion].a.push(s.anaquel); }); const keys = Object.keys(ag).sort(); if (keys.length === 0) html += `<div class="empty-state"><p>NO HAY SECCIONES.</p></div>`; else { html += '<div style="display:grid;gap:15px;margin-bottom:20px;">'; keys.forEach(sec => { const info = ag[sec]; const ao = info.a.sort((a,b) => a.localeCompare(b,undefined,{numeric:true})); html += `<div style="border:2px solid #e0e0e0;border-radius:10px;padding:15px;"><div style="display:flex;justify-content:space-between;margin-bottom:12px;"><div><span style="font-size:20px;font-weight:bold;color:var(--primary);">SECCIÓN ${sec}</span><span style="margin-left:10px;">— ${info.d}</span></div><button class="btn btn-danger btn-sm" onclick="App.eliminarSeccionCompleta('${sec}')">${UI.icons.trash} ELIMINAR</button></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">${ao.map(a => `<span style="background:var(--primary);color:white;padding:6px 12px;border-radius:20px;font-size:13px;">${sec}${a}<button onclick="event.stopPropagation();App.eliminarAnaquelIndividual('${sec}','${a}')" style="background:rgba(255,255,255,0.3);border:none;color:white;cursor:pointer;padding:2px 6px;border-radius:50%;">×</button></span>`).join('')}</div><button class="btn btn-info btn-sm" onclick="App.mostrarAgregarAnaquel('${sec}')">${UI.icons.plus} AGREGAR</button></div>`; }); html += '</div>'; } html += `<h3 style="margin-top:25px;padding-top:20px;border-top:2px solid #eee;">CREAR SECCIÓN</h3><div class="form-row"><div class="form-group"><label>LETRA *</label><input type="text" id="nueva-seccion-letra" maxlength="1" placeholder="A" style="text-transform:uppercase;"></div><div class="form-group"><label>DESCRIPCIÓN *</label><input type="text" id="nueva-seccion-descripcion" placeholder="EJ: MATERIAL QUIRÚRGICO" style="text-transform:uppercase;"></div><div class="form-group"><label>CANTIDAD</label><input type="number" id="nueva-seccion-cantidad" value="1" min="1" max="50"></div></div><button class="btn btn-success" onclick="App.crearNuevaSeccion()">${UI.icons.plus} CREAR</button>`; document.getElementById('tab-contenido').innerHTML = html; },
-    mostrarContenidoUnidades() { const unidades = this.state.unidades.sort((a,b) => a.nombre.localeCompare(b.nombre)); let html = '<p style="font-size:12px;color:#666;margin-bottom:15px;">CONFIGURE LAS UNIDADES DE MEDIDA DISPONIBLES.</p>'; if (unidades.length === 0) html += '<div class="empty-state"><p>NO HAY UNIDADES.</p></div>'; else { html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">'; unidades.forEach(u => { html += `<span style="background:var(--primary-light);color:white;padding:8px 14px;border-radius:20px;font-size:13px;">${u.nombre}<button onclick="App.eliminarUnidad(${u.id})" style="background:rgba(255,255,255,0.3);border:none;color:white;cursor:pointer;padding:2px 6px;border-radius:50%;">×</button></span>`; }); html += '</div>'; } html += `<h3 style="margin-top:20px;padding-top:15px;border-top:2px solid #eee;">AGREGAR UNIDAD</h3><div class="form-group"><label>NOMBRE *</label><input type="text" id="nueva-unidad" placeholder="EJ: CAJA" style="text-transform:uppercase;"></div><button class="btn btn-success" onclick="App.agregarUnidad()">${UI.icons.plus} AGREGAR</button>`; document.getElementById('tab-contenido').innerHTML = html; },
 
-    async agregarUnidad() { const n = document.getElementById('nueva-unidad').value.trim().toUpperCase(); if (!n) { UI.showToast('INGRESE UN NOMBRE', 'error'); return; } try { await DB.addUnidadMedida(n); await DB.addMovimiento({ tipo: 'CREACION_UNIDAD', insumo: `UNIDAD: ${n}`, cantidad: 0, comentarios: `UNIDAD CREADA` }); await this.loadAllData(); this.mostrarContenidoUnidades(); UI.showToast('UNIDAD AGREGADA', 'success'); } catch (e) { UI.showToast('ERROR', 'error'); } },
-    async eliminarUnidad(id) { const u = this.state.unidades.find(x => x.id === id); if (!u || !confirm('¿ELIMINAR?')) return; try { await DB.addMovimiento({ tipo: 'ELIMINACION_UNIDAD', insumo: `UNIDAD: ${u.nombre}`, cantidad: 0 }); await DB.deleteUnidadMedida(id); await this.loadAllData(); this.mostrarContenidoUnidades(); UI.showToast('UNIDAD ELIMINADA', 'success'); } catch (e) { UI.showToast('ERROR', 'error'); } },
-
-    async crearNuevaSeccion() { const l = document.getElementById('nueva-seccion-letra').value.trim().toUpperCase(); const d = document.getElementById('nueva-seccion-descripcion').value.trim().toUpperCase(); const c = parseInt(document.getElementById('nueva-seccion-cantidad').value) || 1; if (!l || !d) { UI.showToast('COMPLETE LOS CAMPOS', 'error'); return; } try { for (let i = 1; i <= c; i++) await DB.addSeccion(l, d, String(i)); await DB.addMovimiento({ tipo: 'CREACION_SECCION', insumo: `SECCIÓN ${l}`, cantidad: c }); await this.loadAllData(); this.mostrarContenidoSecciones(); this.renderDashboard(); UI.showToast('SECCIÓN CREADA', 'success'); } catch (e) { UI.showToast('ERROR', 'error'); } },
-    async eliminarSeccionCompleta(sec) { if (!confirm('¿ELIMINAR SECCIÓN ' + sec + '?')) return; const items = this.state.secciones.filter(s => s.seccion === sec); try { await DB.addMovimiento({ tipo: 'ELIMINACION_SECCION', insumo: `SECCIÓN ${sec}`, cantidad: items.length }); for (const item of items) await DB.deleteSeccion(item.id); await this.loadAllData(); this.mostrarContenidoSecciones(); UI.showToast('SECCIÓN ELIMINADA', 'success'); } catch (e) { UI.showToast('ERROR', 'error'); } },
-
-    editarInsumo(id) {
-        const i = this.state.inventario.find(x => x.id === id); if (!i) return;
-        const esB = window.currentBodega === 'BOTIQUIN';
-        const anaq = this.state.secciones.map(s => s.seccion+s.anaquel).sort();
-        const und = this.state.unidades.map(u => u.nombre).sort();
-        const esMovil = window.innerWidth <= 768;
-        const campoA = esB ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="edit-anaquel">${anaq.map(a => `<option value="${a}" ${a===i.anaquel?'selected':''}>${a}</option>`).join('')}</select></div>`;
-        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.abrirEscanner('edicion')" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
-        UI.openModal(`<h2>EDITAR #${i.id}</h2>${botonEscaner}<div id="scanner-container-edicion" style="display:none;margin-bottom:10px;"></div><div class="form-group"><label>NOMBRE *</label><input type="text" id="edit-nombre" value="${i.nombre||''}" style="text-transform:uppercase;"></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="edit-codigo-barras" value="${i.codigo_barras||''}" onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasEdicion();}"></div>${campoA}<div class="form-row"><div class="form-group"><label>STOCK</label><input type="number" id="edit-stock" value="${i.stock}" min="0"></div><div class="form-group"><label>UNIDAD</label><select id="edit-unidad"><option value="">SELECCIONE...</option>${und.map(u => `<option value="${u}" ${u===i.unidad?'selected':''}>${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="edit-lote" value="${i.lote||''}" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="edit-vencimiento" value="${i.vencimiento||''}"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="edit-comentarios" style="text-transform:uppercase;">${i.comentarios||''}</textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarEdicion(${id})">${UI.icons.edit} GUARDAR</button></div>`);
+    mostrarModalGestion() {
+        const secciones = this.secciones;
+        const unidades = this.unidades || [];
+        
+        let seccionesHtml = secciones.map(s => 
+            `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid #f0f0f0;">
+                <span><strong>${s.seccion}</strong> - ${s.anaquel}${s.descripcion ? ` (${s.descripcion})` : ''}</span>
+                <button class="btn btn-sm btn-danger" onclick="App.eliminarSeccion('${s.id}')">Eliminar</button>
+            </div>`
+        ).join('');
+        
+        let unidadesHtml = unidades.map(u => 
+            `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid #f0f0f0;">
+                <span><strong>${u.nombre}</strong></span>
+                <button class="btn btn-sm btn-danger" onclick="App.eliminarUnidad('${u.id}')">Eliminar</button>
+            </div>`
+        ).join('');
+        
+        const content = `
+            <h2>⚙️ GESTIÓN DE SECCIONES Y UNIDADES</h2>
+            
+            <div style="margin-bottom:20px;">
+                <h3 style="color:#1a3a6b; font-size:14px;">📂 SECCIONES / ANAQUELES</h3>
+                <div style="background:#f8f9fa; padding:10px; border-radius:5px; margin-top:5px; max-height:200px; overflow-y:auto;">
+                    ${seccionesHtml || '<div style="color:#999;">No hay secciones registradas</div>'}
+                </div>
+                <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                    <input type="text" id="nueva-seccion" placeholder="SECCIÓN" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:5px; min-width:100px;">
+                    <input type="text" id="nuevo-anaquel" placeholder="ANAQUEL" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:5px; min-width:100px;">
+                    <input type="text" id="nueva-descripcion" placeholder="DESCRIPCIÓN" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:5px; min-width:120px;">
+                    <button class="btn btn-success" onclick="App.agregarSeccion()">➕ AGREGAR</button>
+                </div>
+            </div>
+            
+            <div>
+                <h3 style="color:#1a3a6b; font-size:14px;">📏 UNIDADES DE MEDIDA</h3>
+                <div style="background:#f8f9fa; padding:10px; border-radius:5px; margin-top:5px; max-height:150px; overflow-y:auto;">
+                    ${unidadesHtml || '<div style="color:#999;">No hay unidades registradas</div>'}
+                </div>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <input type="text" id="nueva-unidad" placeholder="NUEVA UNIDAD (EJ: KG, ML, UNIDAD)" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:5px; text-transform:uppercase;">
+                    <button class="btn btn-success" onclick="App.agregarUnidad()">➕ AGREGAR</button>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button>
+            </div>
+        `;
+        UI.openModal(content);
     },
-    async procesarEdicion(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; const esB = window.currentBodega === 'BOTIQUIN'; const an = esB ? i.anaquel : document.getElementById('edit-anaquel').value; const ns = parseInt(document.getElementById('edit-stock').value); const up = { nombre: document.getElementById('edit-nombre').value.trim().toUpperCase(), seccion: esB ? 'B' : an.charAt(0), anaquel: an, stock: ns, codigo_barras: this.limpiarCodigoBarras(document.getElementById('edit-codigo-barras').value) || null, unidad: document.getElementById('edit-unidad').value, lote: document.getElementById('edit-lote').value.trim().toUpperCase(), vencimiento: document.getElementById('edit-vencimiento').value || null, comentarios: document.getElementById('edit-comentarios').value.trim().toUpperCase() }; if (!up.nombre || isNaN(ns) || ns < 0) { UI.showToast('COMPLETE LOS CAMPOS', 'error'); return; } try { await DB.updateInventarioItem(id, up); await DB.addMovimiento({ tipo: 'EDICION', insumo: up.nombre, cantidad: ns !== i.stock ? Math.abs(ns - i.stock) : 0, stock_anterior: i.stock, stock_nuevo: ns, anaquel: an }); UI.closeModal(); UI.showToast('INSUMO ACTUALIZADO', 'success'); await this.loadAllData(); this.renderDashboard(); this.renderInventario(); } catch (e) { UI.showToast('ERROR', 'error'); } },
-    async eliminarInsumo(id) { const i = this.state.inventario.find(x => x.id === id); if (!i || !confirm('¿ELIMINAR?')) return; try { await DB.addMovimiento({ tipo: 'ELIMINACION', insumo: i.nombre, cantidad: 0, stock_anterior: i.stock }); await DB.deleteInventarioItem(id); UI.showToast('INSUMO ELIMINADO', 'success'); await this.loadAllData(); this.renderDashboard(); this.renderInventario(); } catch (e) { UI.showToast('ERROR', 'error'); } },
 
-    async showGestionUsuariosModal() { if (!window.currentUser || window.currentUser.rol !== 'admin') return; const { data: u } = await supabaseClient.from('usuarios').select('*').order('created_at', { ascending: false }); let h = '<h2>GESTIONAR USUARIOS</h2>'; if (u && u.length > 0) { h += '<div class="table-container"><table><thead><tr><th>USUARIO</th><th>NOMBRE</th><th class="text-center">ROL</th><th class="text-center">ESTADO</th><th class="text-center">ACCIÓN</th></tr></thead><tbody>'; u.forEach(p => { h += `<tr><td><strong>${p.usuario}</strong></td><td>${p.nombre||'-'}</td><td class="text-center">${p.rol==='admin'?'<span class="badge badge-danger">ADMIN</span>':(p.rol==='usuario'?'<span class="badge badge-info">USUARIO</span>':'<span class="badge badge-warning">PENDIENTE</span>')}</td><td class="text-center">${p.activo?'<span class="badge badge-success">ACTIVO</span>':'<span class="badge badge-warning">PENDIENTE</span>'}</td><td class="text-center">${!p.activo?`<button class="btn btn-success btn-sm" onclick="App.activarUsuario(${p.id})">ACTIVAR</button>`:''}${p.rol!=='admin'&&p.activo?`<button class="btn btn-danger btn-sm" onclick="App.desactivarUsuario(${p.id})">DESACTIVAR</button>`:''}</td></tr>`; }); h += '</tbody></table></div>'; } UI.openModal(h + '<div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button></div>'); },
-    async activarUsuario(id) { await supabaseClient.from('usuarios').update({ activo: true, rol: 'usuario' }).eq('id', id); UI.showToast('USUARIO ACTIVADO', 'success'); this.showGestionUsuariosModal(); },
-    async desactivarUsuario(id) { if (!confirm('¿DESACTIVAR?')) return; await supabaseClient.from('usuarios').update({ activo: false }).eq('id', id); UI.showToast('USUARIO DESACTIVADO', 'success'); this.showGestionUsuariosModal(); },
+    async agregarSeccion() {
+        const seccion = document.getElementById('nueva-seccion').value.trim().toUpperCase();
+        const anaquel = document.getElementById('nuevo-anaquel').value.trim().toUpperCase();
+        const descripcion = document.getElementById('nueva-descripcion').value.trim().toUpperCase();
+        
+        if (!seccion || !anaquel) {
+            UI.showToast('Complete sección y anaquel', 'warning');
+            return;
+        }
+        
+        try {
+            await DB.addSeccion(seccion, descripcion, anaquel);
+            UI.showToast('✅ Sección agregada', 'success');
+            
+            // Recargar datos
+            this.secciones = await DB.getSecciones(this.bodega);
+            this.mostrarModalGestion();
+            await this.actualizarDashboard();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
 
-    exportarExcel() { const { inventario } = this.state; if (!inventario.length) { UI.showToast('SIN DATOS', 'warning'); return; } let csv = 'ID;NOMBRE;ANAQUEL;STOCK;UNIDAD;LOTE;VENCIMIENTO;CODIGO_BARRAS;COMENTARIOS\n'; inventario.forEach(i => { csv += `${i.id};"${i.nombre}";${i.anaquel};${i.stock};${i.unidad||''};${i.lote||''};${i.vencimiento||''};${i.codigo_barras||''};"${i.comentarios||''}"\n`; }); const b = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'}); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `INVENTARIO_${window.currentBodega}_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(u); UI.showToast('EXPORTADO', 'success'); },
-    exportarMovimientosExcel() { const ft = document.getElementById('busqueda-movimientos')?.value?.trim().toLowerCase()||''; const fT = document.getElementById('filtro-tipo-movimiento')?.value||'TODOS'; const fU = document.getElementById('filtro-usuario-movimiento')?.value||'TODOS'; let m = [...this.state.movimientos]; if (fT!=='TODOS') m = m.filter(x => x.tipo===fT); if (fU!=='TODOS') m = m.filter(x => (x.usuario||'SISTEMA')===fU); if (ft) m = m.filter(x => (x.insumo&&x.insumo.toLowerCase().includes(ft))||(x.anaquel&&x.anaquel.toLowerCase().includes(ft))); if (!m.length) { UI.showToast('SIN DATOS', 'warning'); return; } let csv = 'USUARIO;FECHA;TIPO;INFO.;CANTIDAD;STOCK ANT.;STOCK NUEVO;ANAQUEL;COMENTARIOS\n'; m.forEach(x => { csv += `"${x.usuario||'SISTEMA'}";"${new Date(x.fecha).toLocaleString('es-CL')}";${this.formatearTipo(x.tipo)};"${x.insumo||''}";${x.cantidad||0};${x.stock_anterior!=null?x.stock_anterior:''};${x.stock_nuevo!=null?x.stock_nuevo:''};${x.anaquel||''};"${x.comentarios||''}"\n`; }); const b = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'}); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `MOVIMIENTOS_${window.currentBodega}_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(u); UI.showToast(`${m.length} MOVIMIENTOS EXPORTADOS`, 'success'); }
+    async eliminarSeccion(id) {
+        if (!confirm('¿Eliminar esta sección?')) return;
+        
+        try {
+            await DB.deleteSeccion(id);
+            UI.showToast('✅ Sección eliminada', 'success');
+            
+            this.secciones = await DB.getSecciones(this.bodega);
+            this.mostrarModalGestion();
+            await this.actualizarDashboard();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    async agregarUnidad() {
+        const nombre = document.getElementById('nueva-unidad').value.trim().toUpperCase();
+        
+        if (!nombre) {
+            UI.showToast('Ingrese una unidad', 'warning');
+            return;
+        }
+        
+        try {
+            await DB.addUnidadMedida(nombre);
+            UI.showToast('✅ Unidad agregada', 'success');
+            
+            this.unidades = await DB.getUnidadesMedida(this.bodega);
+            this.mostrarModalGestion();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    async eliminarUnidad(id) {
+        if (!confirm('¿Eliminar esta unidad?')) return;
+        
+        try {
+            await DB.deleteUnidadMedida(id);
+            UI.showToast('✅ Unidad eliminada', 'success');
+            
+            this.unidades = await DB.getUnidadesMedida(this.bodega);
+            this.mostrarModalGestion();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    // ==================== EXPORTACIONES ====================
+    async exportarInventarioExcel() {
+        try {
+            const data = this.inventario.map(item => ({
+                'NOMBRE': item.nombre || '',
+                'SECCIÓN': item.seccion || '',
+                'ANAQUEL': item.anaquel || '',
+                'STOCK': item.stock || 0,
+                'UNIDAD': item.unidad || '',
+                'LOTE': item.lote || '',
+                'VENCIMIENTO': item.vencimiento ? new Date(item.vencimiento).toLocaleDateString('es-CL') : '',
+                'CÓDIGO BARRAS': item.codigo_barras || '',
+                'COMENTARIOS': item.comentarios || ''
+            }));
+            
+            if (data.length === 0) {
+                UI.showToast('No hay datos para exportar', 'warning');
+                return;
+            }
+            
+            // Crear CSV
+            const headers = Object.keys(data[0]);
+            let csv = headers.join(',') + '\n';
+            data.forEach(row => {
+                csv += headers.map(h => {
+                    let val = String(row[h] || '');
+                    if (val.includes(',') || val.includes('"')) {
+                        val = `"${val.replace(/"/g, '""')}"`;
+                    }
+                    return val;
+                }).join(',') + '\n';
+            });
+            
+            // Descargar
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `inventario_${this.bodega}_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            
+            UI.showToast('✅ Exportación completada', 'success');
+            
+        } catch (error) {
+            console.error('Error exportando:', error);
+            UI.showToast('❌ Error al exportar', 'error');
+        }
+    },
+
+    async exportarMovimientosExcel() {
+        try {
+            const movimientos = await DB.getTodosMovimientos(this.bodega);
+            
+            const data = movimientos.map(m => ({
+                'FECHA': new Date(m.fecha).toLocaleString('es-CL'),
+                'TIPO': m.tipo || '',
+                'INSUMO': m.insumo || '',
+                'CANTIDAD': m.cantidad || 0,
+                'STOCK ANTERIOR': m.stock_anterior !== null ? m.stock_anterior : '',
+                'STOCK NUEVO': m.stock_nuevo !== null ? m.stock_nuevo : '',
+                'ANAQUEL': m.anaquel || '',
+                'USUARIO': m.usuario || '',
+                'COMENTARIOS': m.comentarios || ''
+            }));
+            
+            if (data.length === 0) {
+                UI.showToast('No hay movimientos para exportar', 'warning');
+                return;
+            }
+            
+            const headers = Object.keys(data[0]);
+            let csv = headers.join(',') + '\n';
+            data.forEach(row => {
+                csv += headers.map(h => {
+                    let val = String(row[h] || '');
+                    if (val.includes(',') || val.includes('"')) {
+                        val = `"${val.replace(/"/g, '""')}"`;
+                    }
+                    return val;
+                }).join(',') + '\n';
+            });
+            
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `movimientos_${this.bodega}_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            
+            UI.showToast('✅ Exportación completada', 'success');
+            
+        } catch (error) {
+            console.error('Error exportando:', error);
+            UI.showToast('❌ Error al exportar', 'error');
+        }
+    },
+
+    // ==================== CÓDIGOS DE BARRAS ====================
+    mostrarDialogoGenerarCodigos() {
+        const content = `
+            <h2>🏷️ GENERAR ETIQUETAS (5cm x 3cm)</h2>
+            <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #1a3a6b;">
+                <p style="margin: 0 0 5px 0; font-size: 13px; color: #333; font-weight: 600;">
+                    📋 Seleccione los insumos para generar etiquetas
+                </p>
+                <p style="margin: 0; font-size: 12px; color: #666;">
+                    Las etiquetas se generarán en formato <strong>5cm x 3cm</strong>, ideales para impresión en papel adhesivo.
+                    Se utiliza el campo <strong>"Código de Barras"</strong> de cada insumo.
+                </p>
+            </div>
+
+            <div class="form-group">
+                <label>🎯 FILTRO DE INSUMOS</label>
+                <select id="filtro-barcode" style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:5px; font-size:13px;">
+                    <option value="todos">TODOS LOS INSUMOS CON CÓDIGO</option>
+                    <option value="con-codigo">SOLO CON CÓDIGO DE BARRAS</option>
+                    <option value="sin-codigo">SIN CÓDIGO DE BARRAS</option>
+                    <option value="stock-critico">STOCK CRÍTICO</option>
+                    <option value="por-vencer">POR VENCER</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>📏 FORMATO DEL CÓDIGO</label>
+                <select id="formato-barcode" style="width:100%; padding:10px; border:2px solid #e0e0e0; border-radius:5px; font-size:13px;">
+                    <option value="CODE128">CODE128 (Recomendado)</option>
+                    <option value="EAN13">EAN-13 (13 dígitos)</option>
+                    <option value="UPC">UPC (12 dígitos)</option>
+                    <option value="CODE39">CODE39</option>
+                    <option value="ITF">ITF-14</option>
+                </select>
+            </div>
+
+            <div class="form-group" style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+                <label style="margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                    <input type="checkbox" id="mostrar-stock" checked> Mostrar stock
+                </label>
+                <label style="margin: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;">
+                    <input type="checkbox" id="mostrar-nombre" checked> Mostrar nombre
+                </label>
+            </div>
+
+            <div style="margin-top: 5px; font-size: 11px; color: #888; padding: 8px; background: #f0f4ff; border-radius: 4px;">
+                ℹ️ Las etiquetas se generarán en tamaño <strong>50mm x 30mm</strong> (5cm x 3cm)
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="App.generarCodigosBarras()" style="flex:1; padding: 12px;">
+                    🏷️ GENERAR ETIQUETAS
+                </button>
+                <button class="btn btn-secondary" onclick="UI.closeModal()" style="padding: 12px 25px;">
+                    CANCELAR
+                </button>
+            </div>
+        `;
+        UI.openModal(content);
+    },
+
+    async generarCodigosBarras() {
+        const filtro = document.getElementById('filtro-barcode')?.value || 'todos';
+        const formato = document.getElementById('formato-barcode')?.value || 'CODE128';
+        const mostrarStock = document.getElementById('mostrar-stock')?.checked !== false;
+        const mostrarNombre = document.getElementById('mostrar-nombre')?.checked !== false;
+
+        try {
+            UI.showToast('🔄 Generando etiquetas...', 'info');
+            
+            // Obtener inventario actualizado
+            const inventario = await DB.getInventario(this.bodega);
+            
+            // Aplicar filtros
+            let insumosFiltrados = BarcodeGenerator.filterInsumos(inventario, filtro);
+
+            if (insumosFiltrados.length === 0) {
+                UI.showToast('❌ No hay insumos que cumplan con los criterios seleccionados', 'warning');
+                UI.closeModal();
+                return;
+            }
+
+            // Configurar opciones
+            const options = {
+                format: formato,
+                displayValue: true,
+                mostrarStock: mostrarStock,
+                mostrarNombre: mostrarNombre,
+                fontSize: formato === 'EAN13' || formato === 'UPC' ? 9 : 10
+            };
+
+            // Filtrar solo los que tienen código
+            const conCodigo = insumosFiltrados.filter(i => i.codigo_barras && i.codigo_barras.trim() !== '');
+            
+            if (conCodigo.length === 0) {
+                UI.showToast('❌ Ningún insumo seleccionado tiene código de barras', 'warning');
+                UI.closeModal();
+                return;
+            }
+
+            const mensaje = `Se generarán ${conCodigo.length} etiqueta(s) en formato 5cm x 3cm. ¿Desea continuar?`;
+            if (!confirm(mensaje)) {
+                UI.closeModal();
+                return;
+            }
+
+            // Generar y mostrar para impresión
+            BarcodeGenerator.printBarcodes(conCodigo, options);
+
+            UI.closeModal();
+            UI.showToast(`✅ ${conCodigo.length} etiquetas generadas correctamente`, 'success');
+
+        } catch (error) {
+            console.error('Error generando etiquetas:', error);
+            UI.showToast('❌ Error al generar etiquetas: ' + (error.message || 'Error desconocido'), 'error');
+        }
+    },
+
+    // ==================== ADMINISTRACIÓN ====================
+    mostrarModalUsuarios() {
+        const content = `
+            <h2>👥 GESTIÓN DE USUARIOS</h2>
+            <div id="lista-usuarios" style="margin-bottom:15px; max-height:300px; overflow-y:auto;">
+                <div class="spinner" style="margin:20px auto;"></div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button>
+            </div>
+        `;
+        UI.openModal(content);
+        this.cargarUsuarios();
+    },
+
+    async cargarUsuarios() {
+        const container = document.getElementById('lista-usuarios');
+        if (!container) return;
+        
+        try {
+            const { data: usuarios, error } = await supabaseClient
+                .from('usuarios')
+                .select('*')
+                .order('nombre');
+            
+            if (error) throw error;
+            
+            let html = '<table><thead><tr><th>NOMBRE</th><th>USUARIO</th><th>ROL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>';
+            
+            usuarios.forEach(user => {
+                html += `<tr>
+                    <td>${user.nombre || '-'}</td>
+                    <td>${user.usuario}</td>
+                    <td><span class="badge ${user.rol === 'admin' ? 'badge-success' : 'badge-warning'}">${user.rol || 'pendiente'}</span></td>
+                    <td><span class="badge ${user.activo ? 'badge-success' : 'badge-danger'}">${user.activo ? 'ACTIVO' : 'PENDIENTE'}</span></td>
+                    <td>
+                        ${!user.activo ? `<button class="btn btn-sm btn-success" onclick="App.activarUsuario('${user.id}')">ACTIVAR</button>` : ''}
+                        ${user.rol !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="App.eliminarUsuario('${user.id}')">ELIMINAR</button>` : ''}
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+        } catch (error) {
+            console.error('Error cargando usuarios:', error);
+            container.innerHTML = `<div class="empty-state"><p>Error al cargar usuarios</p></div>`;
+        }
+    },
+
+    async activarUsuario(id) {
+        if (!confirm('¿Activar este usuario?')) return;
+        
+        try {
+            const { error } = await supabaseClient
+                .from('usuarios')
+                .update({ activo: true, rol: 'usuario' })
+                .eq('id', id);
+            
+            if (error) throw error;
+            
+            UI.showToast('✅ Usuario activado', 'success');
+            this.cargarUsuarios();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    async eliminarUsuario(id) {
+        if (!confirm('¿Eliminar este usuario permanentemente?')) return;
+        
+        try {
+            const { error } = await supabaseClient
+                .from('usuarios')
+                .delete()
+                .eq('id', id);
+            
+            if (error) throw error;
+            
+            UI.showToast('✅ Usuario eliminado', 'success');
+            this.cargarUsuarios();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    // ==================== UTILIDADES ====================
+    escaneoCodigoBarras(inputId) {
+        const content = `
+            <h2>📷 ESCANEAR CÓDIGO DE BARRAS</h2>
+            <div id="scanner-viewport" style="width:100%; height:250px; border:2px solid #1a3a6b; border-radius:8px; overflow:hidden; position:relative; background:#f0f0f0;"></div>
+            <div style="margin-top:10px; text-align:center;">
+                <button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button>
+            </div>
+        `;
+        UI.openModal(content);
+        
+        setTimeout(() => {
+            const html5QrCode = new Html5Qrcode("scanner-viewport");
+            const config = { fps: 10, qrbox: { width: 250, height: 100 } };
+            
+            html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText) => {
+                    html5QrCode.stop();
+                    UI.closeModal();
+                    
+                    const input = document.getElementById(inputId);
+                    if (input) {
+                        input.value = decodedText;
+                        UI.showToast('✅ Código escaneado: ' + decodedText, 'success');
+                    }
+                },
+                (errorMessage) => {}
+            ).catch(err => {
+                UI.showToast('❌ Error al acceder a la cámara', 'error');
+                UI.closeModal();
+            });
+        }, 500);
+    },
+
+    async mostrarEditarInsumo(id) {
+        const item = this.inventario.find(i => i.id === id);
+        if (!item) {
+            UI.showToast('Insumo no encontrado', 'error');
+            return;
+        }
+        
+        const secciones = this.secciones;
+        const unidades = this.unidades || [];
+        
+        let seccionesOptions = secciones.map(s => 
+            `<option value="${s.seccion}" ${s.seccion === item.seccion ? 'selected' : ''}>${s.seccion} - ${s.anaquel}</option>`
+        ).join('');
+        
+        let unidadesOptions = unidades.map(u => 
+            `<option value="${u.nombre}" ${u.nombre === item.unidad ? 'selected' : ''}>${u.nombre}</option>`
+        ).join('');
+        
+        const content = `
+            <h2>✏️ EDITAR INSUMO</h2>
+            <form id="form-editar" onsubmit="App.guardarEdicionInsumo(event, '${id}')">
+                <div class="form-group">
+                    <label>NOMBRE *</label>
+                    <input type="text" id="edit-nombre" value="${item.nombre || ''}" required style="text-transform:uppercase;">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>SECCIÓN *</label>
+                        <select id="edit-seccion" required>
+                            <option value="">SELECCIONE...</option>
+                            ${seccionesOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>ANAQUEL *</label>
+                        <input type="text" id="edit-anaquel" value="${item.anaquel || ''}" required style="text-transform:uppercase;">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>STOCK *</label>
+                        <input type="number" id="edit-stock" value="${item.stock || 0}" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>UNIDAD</label>
+                        <select id="edit-unidad">
+                            <option value="">SELECCIONE...</option>
+                            ${unidadesOptions}
+                            <option value="OTRO">OTRO (ESPECIFICAR)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>LOTE</label>
+                        <input type="text" id="edit-lote" value="${item.lote || ''}" style="text-transform:uppercase;">
+                    </div>
+                    <div class="form-group">
+                        <label>VENCIMIENTO</label>
+                        <input type="date" id="edit-vencimiento" value="${item.vencimiento || ''}">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>CÓDIGO DE BARRAS</label>
+                    <input type="text" id="edit-codigo" value="${item.codigo_barras || ''}">
+                </div>
+                <div class="form-group">
+                    <label>COMENTARIOS</label>
+                    <textarea id="edit-comentarios">${item.comentarios || ''}</textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button>
+                    <button type="submit" class="btn btn-primary">💾 GUARDAR CAMBIOS</button>
+                </div>
+            </form>
+        `;
+        UI.openModal(content);
+    },
+
+    async guardarEdicionInsumo(e, id) {
+        e.preventDefault();
+        
+        const updates = {
+            nombre: document.getElementById('edit-nombre').value.trim(),
+            seccion: document.getElementById('edit-seccion').value,
+            anaquel: document.getElementById('edit-anaquel').value.trim().toUpperCase(),
+            stock: parseInt(document.getElementById('edit-stock').value) || 0,
+            unidad: document.getElementById('edit-unidad').value || null,
+            lote: document.getElementById('edit-lote').value.trim() || null,
+            vencimiento: document.getElementById('edit-vencimiento').value || null,
+            codigo_barras: document.getElementById('edit-codigo').value.trim() || null,
+            comentarios: document.getElementById('edit-comentarios').value.trim() || null
+        };
+        
+        if (!updates.nombre || !updates.seccion || !updates.anaquel) {
+            UI.showToast('Complete los campos obligatorios', 'error');
+            return;
+        }
+        
+        try {
+            const item = await DB.getInventarioItem(id);
+            const stockAnterior = item.stock;
+            
+            await DB.updateInventarioItem(id, updates);
+            
+            // Registrar movimiento de edición
+            await DB.addMovimiento({
+                tipo: 'EDICION',
+                insumo: updates.nombre,
+                cantidad: updates.stock - stockAnterior,
+                stock_anterior: stockAnterior,
+                stock_nuevo: updates.stock,
+                anaquel: updates.anaquel,
+                comentarios: `EDITADO: ${updates.comentarios || 'Sin comentarios'}`
+            });
+            
+            UI.showToast('✅ Insumo actualizado correctamente', 'success');
+            UI.closeModal();
+            
+            // Recargar datos
+            await this.cargarDatosIniciales();
+            await this.actualizarDashboard();
+            this.renderInventario();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    async eliminarInsumo(id) {
+        if (!confirm('¿Eliminar este insumo permanentemente?')) return;
+        
+        try {
+            const item = await DB.getInventarioItem(id);
+            await DB.deleteInventarioItem(id);
+            
+            // Registrar movimiento de eliminación
+            await DB.addMovimiento({
+                tipo: 'ELIMINACION',
+                insumo: item.nombre,
+                cantidad: item.stock,
+                stock_anterior: item.stock,
+                stock_nuevo: 0,
+                anaquel: item.anaquel,
+                comentarios: 'INSUMO ELIMINADO DEL SISTEMA'
+            });
+            
+            UI.showToast('✅ Insumo eliminado', 'success');
+            
+            // Recargar datos
+            await this.cargarDatosIniciales();
+            await this.actualizarDashboard();
+            this.renderInventario();
+            
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    async recargarDatos() {
+        try {
+            await this.cargarDatosIniciales();
+            await this.actualizarDashboard();
+            const vista = document.querySelector('[id^="section-"]:not([style*="display:none"])');
+            if (vista) {
+                const id = vista.id.replace('section-', '');
+                if (id === 'inventario') this.renderInventario();
+                else if (id === 'movimientos') this.renderMovimientos();
+            }
+            UI.showToast('🔄 Datos actualizados', 'success');
+        } catch (error) {
+            UI.showToast('❌ Error al recargar datos', 'error');
+        }
+    }
 };
 
-document.addEventListener('DOMContentLoaded', () => App.init());
+// Función para cambiar de bodega desde el header
+function cambiarBodega() {
+    window.location.href = 'seleccionar.html';
+}
+
+// Función para cerrar sesión
+function cerrarSesion() {
+    localStorage.removeItem('cehaq_user');
+    localStorage.removeItem('cehaq_bodega');
+    window.location.href = 'login.html';
+}
