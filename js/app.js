@@ -129,40 +129,39 @@ const App = {
     },
 
     escanearCodigoBarrasIngreso() {
-        const codigoManual = prompt('INGRESE EL CÓDIGO DE BARRAS MANUALMENTE (O CANCELE PARA ESCANEAR):');
-        if (codigoManual) {
-            document.getElementById('ing-codigo-barras').value = codigoManual.trim().toUpperCase();
-            this.buscarPorCodigoBarrasIngreso();
-            return;
-        }
         const readerId = 'html5qr-reader-ingreso';
         UI.openModal(`<div style="text-align:center;"><h3>ESCANEANDO CÓDIGO DE BARRAS</h3><div id="${readerId}" style="width:100%;max-width:350px;margin:0 auto;"></div><p style="margin-top:10px;font-size:12px;color:#888;">APUNTE AL CÓDIGO DE BARRAS</p><div class="form-actions"><button class="btn btn-secondary" onclick="App.detenerEscaneo('${readerId}')">CANCELAR</button></div></div>`);
         setTimeout(() => {
             const html5QrCode = new Html5Qrcode(readerId);
             html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.777 }, (decodedText) => {
-                html5QrCode.stop().then(() => { UI.closeModal(); document.getElementById('ing-codigo-barras').value = decodedText; this.buscarPorCodigoBarrasIngreso(); });
+                html5QrCode.stop().then(() => {
+                    UI.closeModal();
+                    document.getElementById('ing-codigo-barras').value = decodedText;
+                    this.buscarPorCodigoBarrasIngreso();
+                    window.html5QrCodeIngreso = null;
+                });
             }, (errorMessage) => { }).catch(err => {
                 UI.closeModal();
-                const codigo = prompt('ERROR AL ABRIR CÁMARA. INGRESE EL CÓDIGO MANUALMENTE:');
-                if (codigo) { document.getElementById('ing-codigo-barras').value = codigo.trim().toUpperCase(); this.buscarPorCodigoBarrasIngreso(); }
+                UI.showToast('NO SE PUDO ABRIR LA CÁMARA. INGRESE EL CÓDIGO MANUALMENTE.', 'warning');
             });
             window.html5QrCodeIngreso = html5QrCode;
         }, 500);
     },
 
     escanearCodigoBarrasSalida() {
-        const codigoManual = prompt('INGRESE EL CÓDIGO DE BARRAS MANUALMENTE (O CANCELE PARA ESCANEAR):');
-        if (codigoManual) { this.buscarPorCodigoBarrasSalida(codigoManual.trim().toUpperCase()); return; }
         const readerId = 'html5qr-reader-salida';
         UI.openModal(`<div style="text-align:center;"><h3>ESCANEANDO CÓDIGO DE BARRAS</h3><div id="${readerId}" style="width:100%;max-width:350px;margin:0 auto;"></div><p style="margin-top:10px;font-size:12px;color:#888;">APUNTE AL CÓDIGO DE BARRAS</p><div class="form-actions"><button class="btn btn-secondary" onclick="App.detenerEscaneo('${readerId}')">CANCELAR</button></div></div>`);
         setTimeout(() => {
             const html5QrCode = new Html5Qrcode(readerId);
             html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.777 }, (decodedText) => {
-                html5QrCode.stop().then(() => { UI.closeModal(); this.buscarPorCodigoBarrasSalida(decodedText); });
+                html5QrCode.stop().then(() => {
+                    UI.closeModal();
+                    this.buscarPorCodigoBarrasSalida(decodedText);
+                    window.html5QrCodeSalida = null;
+                });
             }, (errorMessage) => { }).catch(err => {
                 UI.closeModal();
-                const codigo = prompt('ERROR AL ABRIR CÁMARA. INGRESE EL CÓDIGO MANUALMENTE:');
-                if (codigo) this.buscarPorCodigoBarrasSalida(codigo.trim().toUpperCase());
+                UI.showToast('NO SE PUDO ABRIR LA CÁMARA. INGRESE EL CÓDIGO MANUALMENTE.', 'warning');
             });
             window.html5QrCodeSalida = html5QrCode;
         }, 500);
@@ -171,7 +170,7 @@ const App = {
     detenerEscaneo(readerId) {
         const scanner = window.html5QrCodeIngreso || window.html5QrCodeSalida;
         if (scanner) {
-            scanner.stop().then(() => { UI.closeModal(); if (readerId === 'html5qr-reader-ingreso') window.html5QrCodeIngreso = null; else window.html5QrCodeSalida = null; }).catch(() => { UI.closeModal(); });
+            scanner.stop().then(() => { UI.closeModal(); window.html5QrCodeIngreso = null; window.html5QrCodeSalida = null; }).catch(() => { UI.closeModal(); });
         } else { UI.closeModal(); }
     },
 
