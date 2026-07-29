@@ -114,9 +114,28 @@ const App = {
         const unidades = this.state.unidades.map(u => u.nombre).sort();
         const esMovil = window.innerWidth <= 768;
         const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="ing-anaquel"><option value="">SELECCIONE...</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select>${anaqueles.length===0?'<small style="color:#c0392b;">NO HAY ANAQUELES.</small>':''}</div>`;
-        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.escanearCodigoBarrasIngreso()" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
-        UI.openModal(`<h2>NUEVO INGRESO</h2>${botonEscaner}<div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="ing-codigo-barras" placeholder="ESCANEE O INGRESE EL CÓDIGO..." onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasIngreso();}"></div>${campoAnaquel}<div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="ing-lote" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
+        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.abrirEscannerIngreso()" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
+        UI.openModal(`<h2>NUEVO INGRESO</h2>${botonEscaner}<div id="scanner-container-ingreso" style="display:none;margin-bottom:10px;"></div><div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="ing-codigo-barras" placeholder="ESCANEE O INGRESE EL CÓDIGO..." onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasIngreso();}"></div>${campoAnaquel}<div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="ing-lote" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
         setTimeout(() => { document.addEventListener('click', function cerrar(e) { const inp = document.getElementById('ing-nombre'); const sug = document.getElementById('sugerencias-ing'); if (inp && sug && e.target !== inp && !sug.contains(e.target)) sug.style.display = 'none'; }); }, 100);
+    },
+
+    abrirEscannerIngreso() {
+        const container = document.getElementById('scanner-container-ingreso');
+        container.style.display = 'block';
+        container.innerHTML = '';
+        if (window.html5QrCodeIngreso) { window.html5QrCodeIngreso.stop(); }
+        const html5QrCode = new Html5Qrcode('scanner-container-ingreso');
+        html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 } }, (decodedText) => {
+            html5QrCode.stop();
+            container.style.display = 'none';
+            document.getElementById('ing-codigo-barras').value = decodedText;
+            this.buscarPorCodigoBarrasIngreso();
+            window.html5QrCodeIngreso = null;
+        }, (errorMessage) => { }).catch(err => {
+            container.style.display = 'none';
+            UI.showToast('NO SE PUDO ABRIR LA CÁMARA. INGRESE EL CÓDIGO MANUALMENTE.', 'warning');
+        });
+        window.html5QrCodeIngreso = html5QrCode;
     },
 
     showSalidaModal() {
@@ -124,54 +143,26 @@ const App = {
         const esBotiquin = window.currentBodega === 'BOTIQUIN';
         const esMovil = window.innerWidth <= 768;
         const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>FILTRAR POR ANAQUEL</label><select id="sal-anaquel-filtro" onchange="App.filtrarPorAnaquelSalida()"><option value="">TODOS</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select></div>`;
-        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.escanearCodigoBarrasSalida()" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
-        UI.openModal(`<h2>NUEVA SALIDA</h2>${botonEscaner}${campoAnaquel}<div class="form-group" style="position:relative;"><label>BUSCAR POR NOMBRE</label><input type="text" id="sal-busqueda" placeholder="ESCRIBA EL NOMBRE..." autocomplete="off" onkeyup="App.buscarCoincidenciasSalida()" onfocus="App.buscarCoincidenciasSalida()" style="text-transform:uppercase;"><div id="sugerencias-sal" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;"></div></div><div id="resultados-busqueda"><p style="color:#666;padding:15px;">BUSQUE UN INSUMO PARA RETIRAR.</p></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
+        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.abrirEscannerSalida()" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
+        UI.openModal(`<h2>NUEVA SALIDA</h2>${botonEscaner}<div id="scanner-container-salida" style="display:none;margin-bottom:10px;"></div>${campoAnaquel}<div class="form-group" style="position:relative;"><label>BUSCAR POR NOMBRE</label><input type="text" id="sal-busqueda" placeholder="ESCRIBA EL NOMBRE..." autocomplete="off" onkeyup="App.buscarCoincidenciasSalida()" onfocus="App.buscarCoincidenciasSalida()" style="text-transform:uppercase;"><div id="sugerencias-sal" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;"></div></div><div id="resultados-busqueda"><p style="color:#666;padding:15px;">BUSQUE UN INSUMO PARA RETIRAR.</p></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
     },
 
-    escanearCodigoBarrasIngreso() {
-        const readerId = 'html5qr-reader-ingreso';
-        UI.openModal(`<div style="text-align:center;"><h3>ESCANEANDO CÓDIGO DE BARRAS</h3><div id="${readerId}" style="width:100%;max-width:350px;margin:0 auto;"></div><p style="margin-top:10px;font-size:12px;color:#888;">APUNTE AL CÓDIGO DE BARRAS</p><div class="form-actions"><button class="btn btn-secondary" onclick="App.detenerEscaneo('${readerId}')">CANCELAR</button></div></div>`);
-        setTimeout(() => {
-            const html5QrCode = new Html5Qrcode(readerId);
-            html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.777 }, (decodedText) => {
-                html5QrCode.stop().then(() => {
-                    UI.closeModal();
-                    document.getElementById('ing-codigo-barras').value = decodedText;
-                    this.buscarPorCodigoBarrasIngreso();
-                    window.html5QrCodeIngreso = null;
-                });
-            }, (errorMessage) => { }).catch(err => {
-                UI.closeModal();
-                UI.showToast('NO SE PUDO ABRIR LA CÁMARA. INGRESE EL CÓDIGO MANUALMENTE.', 'warning');
-            });
-            window.html5QrCodeIngreso = html5QrCode;
-        }, 500);
-    },
-
-    escanearCodigoBarrasSalida() {
-        const readerId = 'html5qr-reader-salida';
-        UI.openModal(`<div style="text-align:center;"><h3>ESCANEANDO CÓDIGO DE BARRAS</h3><div id="${readerId}" style="width:100%;max-width:350px;margin:0 auto;"></div><p style="margin-top:10px;font-size:12px;color:#888;">APUNTE AL CÓDIGO DE BARRAS</p><div class="form-actions"><button class="btn btn-secondary" onclick="App.detenerEscaneo('${readerId}')">CANCELAR</button></div></div>`);
-        setTimeout(() => {
-            const html5QrCode = new Html5Qrcode(readerId);
-            html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.777 }, (decodedText) => {
-                html5QrCode.stop().then(() => {
-                    UI.closeModal();
-                    this.buscarPorCodigoBarrasSalida(decodedText);
-                    window.html5QrCodeSalida = null;
-                });
-            }, (errorMessage) => { }).catch(err => {
-                UI.closeModal();
-                UI.showToast('NO SE PUDO ABRIR LA CÁMARA. INGRESE EL CÓDIGO MANUALMENTE.', 'warning');
-            });
-            window.html5QrCodeSalida = html5QrCode;
-        }, 500);
-    },
-
-    detenerEscaneo(readerId) {
-        const scanner = window.html5QrCodeIngreso || window.html5QrCodeSalida;
-        if (scanner) {
-            scanner.stop().then(() => { UI.closeModal(); window.html5QrCodeIngreso = null; window.html5QrCodeSalida = null; }).catch(() => { UI.closeModal(); });
-        } else { UI.closeModal(); }
+    abrirEscannerSalida() {
+        const container = document.getElementById('scanner-container-salida');
+        container.style.display = 'block';
+        container.innerHTML = '';
+        if (window.html5QrCodeSalida) { window.html5QrCodeSalida.stop(); }
+        const html5QrCode = new Html5Qrcode('scanner-container-salida');
+        html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 150 } }, (decodedText) => {
+            html5QrCode.stop();
+            container.style.display = 'none';
+            this.buscarPorCodigoBarrasSalida(decodedText);
+            window.html5QrCodeSalida = null;
+        }, (errorMessage) => { }).catch(err => {
+            container.style.display = 'none';
+            UI.showToast('NO SE PUDO ABRIR LA CÁMARA.', 'warning');
+        });
+        window.html5QrCodeSalida = html5QrCode;
     },
 
     async buscarPorCodigoBarrasIngreso() {
@@ -195,7 +186,6 @@ const App = {
         if (!codigo) return;
         try {
             const resultados = await DB.buscarPorCodigoBarras(codigo);
-            UI.closeModal();
             if (resultados.length > 0) {
                 const itemsConStock = resultados.filter(i => i.stock > 0);
                 if (itemsConStock.length === 0) { UI.showToast('SIN STOCK DISPONIBLE', 'warning'); return; }
