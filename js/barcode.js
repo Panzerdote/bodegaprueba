@@ -1,319 +1,855 @@
-// js/barcode.js
+// js/barcode.js - Modulo de Generacion de Codigos de Barras
+// Dependencia: Biblioteca JsBarcode (CDN)
+// Agregar en el HTML: <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 
-const BarcodeGenerator = {
-    // Opciones por defecto para JsBarcode optimizadas para etiquetas 5x3 cm
-    defaultOptions: {
-        format: "CODE128",
-        width: 1.2,
-        height: 50,
-        displayValue: true,
-        fontSize: 10,
-        font: "monospace",
-        textMargin: 4,
-        background: "#ffffff",
-        lineColor: "#000000",
-        margin: 5
-    },
+const BarcodeModule = (() => {
+    // Configuracion privada
+    const _config = {
+        defaultBarcodeFormat: 'CODE128',
+        defaultWidth: 2,
+        defaultHeight: 80,
+        defaultFontSize: 14,
+        defaultMargin: 10,
+        displayValue: true
+    };
 
-    // Generar un solo código de barras
-    generateSingleBarcode(codigo, options = {}) {
-        try {
-            const mergedOptions = { ...this.defaultOptions, ...options };
-            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-            svg.setAttribute("class", "barcode-svg");
-            
-            JsBarcode(svg, codigo, mergedOptions);
-            return svg;
-        } catch (error) {
-            console.error("Error generando código de barras:", error);
-            return null;
-        }
-    },
+    // Variable para almacenar la ventana de impresion
+    let printWindow = null;
 
-    // Generar etiquetas en formato 5cm x 3cm
-    generateLabelPage(insumos, options = {}) {
-        const container = document.createElement('div');
-        container.className = 'barcode-page';
-        container.style.cssText = `
-            padding: 5mm;
-            background: white;
-            font-family: Arial, sans-serif;
-            width: 100%;
-        `;
+    /**
+     * Inicializa el modulo de codigos de barras
+     * Agrega el boton en la interfaz principal
+     */
+    function init() {
+        _addBarcodeButton();
+        _addBarcodeStyles();
+    }
 
-        // Configuración de etiqueta 5cm x 3cm
-        const labelWidth = '50mm';  // 5 cm
-        const labelHeight = '30mm'; // 3 cm
-        const margin = '2mm';
+    /**
+     * Agrega los estilos CSS necesarios para la interfaz de codigos de barras
+     */
+    function _addBarcodeStyles() {
+        const styleId = 'barcode-module-styles';
+        if (document.getElementById(styleId)) return;
 
-        // Grid de etiquetas
-        const grid = document.createElement('div');
-        grid.style.cssText = `
-            display: grid;
-            grid-template-columns: repeat(auto-fill, ${labelWidth});
-            gap: ${margin};
-            justify-content: center;
-            padding: 0;
-        `;
+        const styles = `
+            /* Estilos del Modal de Codigos de Barras */
+            .barcode-modal-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.6);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 10000;
+                backdrop-filter: blur(3px);
+            }
 
-        insumos.forEach((insumo, index) => {
-            if (!insumo.codigo_barras || insumo.codigo_barras.trim() === '') return;
-
-            const label = document.createElement('div');
-            label.style.cssText = `
-                width: ${labelWidth};
-                height: ${labelHeight};
-                padding: 2mm 1mm;
-                border: 0.5px solid #ddd;
-                border-radius: 2px;
+            .barcode-modal {
                 background: white;
+                border-radius: 12px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                width: 90%;
+                max-width: 800px;
+                max-height: 85vh;
+                overflow-y: auto;
+                padding: 0;
+            }
+
+            .barcode-modal-header {
+                background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
+                color: white;
+                padding: 20px 25px;
+                border-radius: 12px 12px 0 0;
                 display: flex;
-                flex-direction: column;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 3px solid #c41e3a;
+            }
+
+            .barcode-modal-header h2 {
+                margin: 0;
+                font-size: 1.3em;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+            }
+
+            .barcode-modal-close {
+                background: rgba(255, 255, 255, 0.2);
+                border: none;
+                color: white;
+                font-size: 1.5em;
+                cursor: pointer;
+                width: 35px;
+                height: 35px;
+                border-radius: 50%;
+                display: flex;
                 align-items: center;
                 justify-content: center;
-                box-sizing: border-box;
-                page-break-inside: avoid;
-                overflow: hidden;
-            `;
+                transition: all 0.3s ease;
+            }
 
-            // Contenedor del código
-            const barcodeContainer = document.createElement('div');
-            barcodeContainer.style.cssText = `
-                width: 100%;
+            .barcode-modal-close:hover {
+                background: rgba(255, 255, 255, 0.4);
+                transform: rotate(90deg);
+            }
+
+            .barcode-modal-body {
+                padding: 25px;
+            }
+
+            /* Filtros */
+            .barcode-filters {
+                background: #f8f9fa;
+                padding: 20px;
+                border-radius: 8px;
+                margin-bottom: 25px;
+                border: 1px solid #e0e0e0;
+            }
+
+            .barcode-filters h3 {
+                margin: 0 0 15px 0;
+                color: #1a3a6b;
+                font-size: 1.1em;
+                font-weight: 600;
+            }
+
+            .barcode-filter-group {
+                display: flex;
+                gap: 15px;
+                flex-wrap: wrap;
+                align-items: flex-end;
+            }
+
+            .barcode-filter-item {
                 flex: 1;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 0;
-            `;
-
-            // Generar código de barras
-            const svg = this.generateSingleBarcode(insumo.codigo_barras, {
-                ...options,
-                height: 28,
-                width: 0.9,
-                fontSize: 8,
-                textMargin: 2,
-                margin: 2
-            });
-            
-            if (svg) {
-                svg.style.cssText = `
-                    width: 100%;
-                    height: auto;
-                    max-height: 22mm;
-                    object-fit: contain;
-                `;
-                barcodeContainer.appendChild(svg);
+                min-width: 200px;
             }
 
-            label.appendChild(barcodeContainer);
+            .barcode-filter-item label {
+                display: block;
+                margin-bottom: 5px;
+                color: #555;
+                font-size: 0.9em;
+                font-weight: 500;
+            }
 
-            // Información del insumo (nombre y código)
-            const info = document.createElement('div');
-            info.style.cssText = `
+            .barcode-filter-item select,
+            .barcode-filter-item input {
                 width: 100%;
-                text-align: center;
-                font-size: 6px;
-                color: #333;
-                line-height: 1.2;
-                padding: 0 1mm;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                padding: 10px 12px;
+                border: 1px solid #ced4da;
+                border-radius: 6px;
+                font-size: 0.95em;
+                transition: border-color 0.3s ease;
+                box-sizing: border-box;
+            }
+
+            .barcode-filter-item select:focus,
+            .barcode-filter-item input:focus {
+                outline: none;
+                border-color: #2c5aa0;
+                box-shadow: 0 0 0 3px rgba(44, 90, 160, 0.1);
+            }
+
+            .barcode-filter-actions {
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+            }
+
+            .btn-barcode-generate {
+                background: linear-gradient(135deg, #c41e3a, #a01830);
+                color: white;
+                border: none;
+                padding: 10px 25px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.95em;
+                font-weight: 600;
+                transition: all 0.3s ease;
                 white-space: nowrap;
-                max-height: 10mm;
-            `;
-            
-            let infoText = insumo.nombre || '';
-            if (insumo.stock !== undefined && options.mostrarStock !== false) {
-                infoText += ` | Stock: ${insumo.stock}`;
             }
-            if (insumo.unidad) {
-                infoText += ` ${insumo.unidad}`;
+
+            .btn-barcode-generate:hover {
+                background: linear-gradient(135deg, #a01830, #8b1529);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(196, 30, 58, 0.3);
             }
-            
-            info.textContent = infoText;
-            label.appendChild(info);
 
-            grid.appendChild(label);
-        });
+            .btn-barcode-print {
+                background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
+                color: white;
+                border: none;
+                padding: 10px 25px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.95em;
+                font-weight: 600;
+                transition: all 0.3s ease;
+                white-space: nowrap;
+            }
 
-        container.appendChild(grid);
+            .btn-barcode-print:hover {
+                background: linear-gradient(135deg, #2c5aa0, #1a3a6b);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(26, 58, 107, 0.3);
+            }
 
-        // Información de página
-        const footer = document.createElement('div');
-        footer.style.cssText = `
-            margin-top: 5mm;
-            text-align: center;
-            font-size: 7px;
-            color: #999;
-            page-break-before: avoid;
+            /* Contenedor de Resultados */
+            .barcode-results {
+                margin-top: 20px;
+            }
+
+            .barcode-results-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+                padding-bottom: 15px;
+                border-bottom: 2px solid #e0e0e0;
+            }
+
+            .barcode-results-header h3 {
+                margin: 0;
+                color: #1a3a6b;
+                font-size: 1.1em;
+            }
+
+            .barcode-count {
+                background: #1a3a6b;
+                color: white;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 0.85em;
+                font-weight: 500;
+            }
+
+            .barcode-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                gap: 20px;
+            }
+
+            .barcode-item {
+                background: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                transition: all 0.3s ease;
+            }
+
+            .barcode-item:hover {
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                border-color: #2c5aa0;
+            }
+
+            .barcode-item-name {
+                font-weight: 600;
+                color: #333;
+                margin-bottom: 10px;
+                font-size: 0.9em;
+                text-transform: uppercase;
+            }
+
+            .barcode-item-code {
+                color: #666;
+                font-size: 0.8em;
+                margin-bottom: 10px;
+            }
+
+            .barcode-item svg {
+                max-width: 100%;
+                height: auto;
+            }
+
+            .barcode-empty {
+                text-align: center;
+                padding: 40px;
+                color: #999;
+                font-size: 1.1em;
+            }
+
+            .barcode-loading {
+                text-align: center;
+                padding: 40px;
+            }
+
+            .barcode-loading-spinner {
+                border: 3px solid #f3f3f3;
+                border-top: 3px solid #2c5aa0;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 15px;
+            }
+
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+
+            /* Estilos de Impresion */
+            @media print {
+                body * {
+                    visibility: hidden;
+                }
+                .barcode-print-container,
+                .barcode-print-container * {
+                    visibility: visible;
+                }
+                .barcode-print-container {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                }
+                .barcode-print-item {
+                    page-break-inside: avoid;
+                    margin-bottom: 20px;
+                    padding: 10px;
+                    border: 1px solid #ccc;
+                    text-align: center;
+                }
+                .no-print {
+                    display: none !important;
+                }
+            }
         `;
-        const total = insumos.filter(i => i.codigo_barras && i.codigo_barras.trim() !== '').length;
-        footer.textContent = `CEHAQ - ${total} etiquetas generadas | ${new Date().toLocaleDateString('es-CL')}`;
-        container.appendChild(footer);
 
-        return container;
-    },
+        const styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        styleElement.textContent = styles;
+        document.head.appendChild(styleElement);
+    }
 
-    // Abrir ventana de impresión optimizada para etiquetas 5x3
-    printBarcodes(insumos, options = {}) {
-        const container = this.generateLabelPage(insumos, options);
-        
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        if (!printWindow) {
-            UI.showToast('Por favor, permite las ventanas emergentes para imprimir', 'warning');
+    /**
+     * Agrega el boton de generacion de codigos de barras en la interfaz
+     */
+    function _addBarcodeButton() {
+        // Intentar agregar el boton en diferentes ubicaciones posibles
+        const addButton = () => {
+            // Opcion 1: En el header o navbar
+            const headerActions = document.querySelector('.header-actions, .nav-actions, .user-menu');
+            if (headerActions && !document.getElementById('btn-open-barcode')) {
+                const button = document.createElement('button');
+                button.id = 'btn-open-barcode';
+                button.className = 'btn-barcode-action';
+                button.innerHTML = 'Generar Codigos de Barra';
+                button.title = 'Generar codigos de barras del inventario';
+                button.style.cssText = `
+                    background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 0.9em;
+                    font-weight: 500;
+                    margin: 0 5px;
+                    transition: all 0.3s ease;
+                `;
+                button.addEventListener('mouseenter', () => {
+                    button.style.transform = 'translateY(-2px)';
+                    button.style.boxShadow = '0 4px 12px rgba(26, 58, 107, 0.4)';
+                });
+                button.addEventListener('mouseleave', () => {
+                    button.style.transform = 'translateY(0)';
+                    button.style.boxShadow = 'none';
+                });
+                button.addEventListener('click', openBarcodeModal);
+                headerActions.appendChild(button);
+                return true;
+            }
+
+            // Opcion 2: En el contenido principal
+            const mainContent = document.querySelector('.main-content, .container, main');
+            if (mainContent && !document.getElementById('btn-open-barcode')) {
+                const buttonContainer = document.createElement('div');
+                buttonContainer.style.cssText = 'text-align: right; margin-bottom: 20px; padding: 10px 0;';
+                
+                const button = document.createElement('button');
+                button.id = 'btn-open-barcode';
+                button.innerHTML = 'Generar Codigos de Barra';
+                button.title = 'Generar codigos de barras del inventario';
+                button.style.cssText = `
+                    background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 0.9em;
+                    font-weight: 500;
+                    transition: all 0.3s ease;
+                `;
+                button.addEventListener('mouseenter', () => {
+                    button.style.transform = 'translateY(-2px)';
+                    button.style.boxShadow = '0 4px 12px rgba(26, 58, 107, 0.4)';
+                });
+                button.addEventListener('mouseleave', () => {
+                    button.style.transform = 'translateY(0)';
+                    button.style.boxShadow = 'none';
+                });
+                button.addEventListener('click', openBarcodeModal);
+                
+                buttonContainer.appendChild(button);
+                mainContent.insertBefore(buttonContainer, mainContent.firstChild);
+                return true;
+            }
+
+            return false;
+        };
+
+        // Intentar agregar inmediatamente
+        if (!addButton()) {
+            // Si no se encuentra el contenedor, esperar a que el DOM este listo
+            const observer = new MutationObserver(() => {
+                if (addButton()) {
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+    }
+
+    /**
+     * Obtiene los insumos del inventario desde el storage
+     */
+    function _getInventoryItems() {
+        try {
+            // Intentar obtener desde database.js
+            if (typeof Database !== 'undefined' && Database.getInsumos) {
+                return Database.getInsumos() || [];
+            }
+            
+            // Alternativa: obtener desde localStorage
+            const inventarioData = localStorage.getItem('inventario_bodega');
+            if (inventarioData) {
+                const data = JSON.parse(inventarioData);
+                return data.insumos || data || [];
+            }
+
+            // Alternativa: obtener desde window.appState
+            if (window.appState && window.appState.inventario) {
+                return window.appState.inventario;
+            }
+
+            return [];
+        } catch (error) {
+            console.error('Error al obtener items del inventario:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Obtiene las categorias unicas del inventario
+     */
+    function _getUniqueCategories(items) {
+        const categories = new Set();
+        items.forEach(item => {
+            if (item.categoria) categories.add(item.categoria);
+        });
+        return Array.from(categories).sort();
+    }
+
+    /**
+     * Filtra los items segun los criterios seleccionados
+     */
+    function _filterItems(items, filters) {
+        return items.filter(item => {
+            // Filtro por categoria
+            if (filters.categoria && filters.categoria !== 'todas') {
+                if (item.categoria !== filters.categoria) return false;
+            }
+
+            // Filtro por busqueda de texto
+            if (filters.search) {
+                const searchTerm = filters.search.toLowerCase();
+                const nombreMatch = item.nombre && item.nombre.toLowerCase().includes(searchTerm);
+                const cbMatch = item.cb && item.cb.toString().toLowerCase().includes(searchTerm);
+                if (!nombreMatch && !cbMatch) return false;
+            }
+
+            // Filtro por insumo especifico
+            if (filters.insumoEspecifico) {
+                if (item.cb !== filters.insumoEspecifico && item.id !== filters.insumoEspecifico) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Genera los codigos de barras para los items filtrados
+     */
+    function _generateBarcodes(items) {
+        const resultsContainer = document.getElementById('barcode-results');
+        if (!resultsContainer) return;
+
+        if (!items || items.length === 0) {
+            resultsContainer.innerHTML = '<div class="barcode-empty">No se encontraron insumos con los filtros seleccionados</div>';
             return;
         }
 
-        printWindow.document.write(`
+        // Mostrar contador
+        let html = `
+            <div class="barcode-results-header">
+                <h3>Codigos Generados</h3>
+                <span class="barcode-count">${items.length} insumo(s)</span>
+            </div>
+            <div class="barcode-grid">
+        `;
+
+        // Generar HTML para cada item
+        items.forEach((item, index) => {
+            const itemName = item.nombre || item.descripcion || 'Sin nombre';
+            const itemCode = item.cb || item.id || `ITEM-${index}`;
+            const barcodeId = `barcode-${index}-${Date.now()}`;
+            
+            html += `
+                <div class="barcode-item">
+                    <div class="barcode-item-name">${itemName}</div>
+                    <div class="barcode-item-code">CB: ${itemCode}</div>
+                    <svg id="${barcodeId}"></svg>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        resultsContainer.innerHTML = html;
+
+        // Generar los SVG de codigos de barras
+        items.forEach((item, index) => {
+            const itemCode = item.cb || item.id || `ITEM-${index}`;
+            const barcodeId = `barcode-${index}-${Date.now()}`;
+            
+            try {
+                if (typeof JsBarcode !== 'undefined') {
+                    JsBarcode(`#${barcodeId}`, itemCode.toString(), {
+                        format: _config.defaultBarcodeFormat,
+                        width: _config.defaultWidth,
+                        height: _config.defaultHeight,
+                        fontSize: _config.defaultFontSize,
+                        margin: _config.defaultMargin,
+                        displayValue: true,
+                        text: itemCode.toString()
+                    });
+                } else {
+                    // Fallback si JsBarcode no esta disponible
+                    const svgElement = document.getElementById(barcodeId);
+                    if (svgElement) {
+                        svgElement.outerHTML = `<div style="padding: 20px; border: 2px dashed #ccc; border-radius: 4px; font-family: monospace; font-size: 1.2em; letter-spacing: 3px;">${itemCode}</div>`;
+                    }
+                }
+            } catch (error) {
+                console.error(`Error generando codigo de barras para ${itemCode}:`, error);
+                const svgElement = document.getElementById(barcodeId);
+                if (svgElement) {
+                    svgElement.outerHTML = `<div style="padding: 10px; color: #c41e3a;">Error al generar codigo</div>`;
+                }
+            }
+        });
+    }
+
+    /**
+     * Abre el modal de generacion de codigos de barras
+     */
+    function openBarcodeModal() {
+        // Verificar si JsBarcode esta disponible
+        if (typeof JsBarcode === 'undefined') {
+            console.warn('JsBarcode no esta cargado. Intentando cargar dinamicamente...');
+            _loadJsBarcode(() => {
+                _showModal();
+            });
+        } else {
+            _showModal();
+        }
+    }
+
+    /**
+     * Carga dinamicamente la biblioteca JsBarcode
+     */
+    function _loadJsBarcode(callback) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
+        script.onload = callback;
+        script.onerror = () => {
+            console.error('No se pudo cargar JsBarcode. Se usara un fallback visual.');
+            callback();
+        };
+        document.head.appendChild(script);
+    }
+
+    /**
+     * Muestra el modal con la interfaz de generacion
+     */
+    function _showModal() {
+        // Remover modal existente si lo hay
+        const existingModal = document.getElementById('barcode-modal-overlay');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        const inventoryItems = _getInventoryItems();
+        const categories = _getUniqueCategories(inventoryItems);
+
+        const modalHTML = `
+            <div id="barcode-modal-overlay" class="barcode-modal-overlay">
+                <div class="barcode-modal">
+                    <div class="barcode-modal-header">
+                        <h2>Generador de Codigos de Barras</h2>
+                        <button class="barcode-modal-close" onclick="document.getElementById('barcode-modal-overlay').remove()">&times;</button>
+                    </div>
+                    <div class="barcode-modal-body">
+                        <div class="barcode-filters">
+                            <h3>Filtros de Busqueda</h3>
+                            <div class="barcode-filter-group">
+                                <div class="barcode-filter-item">
+                                    <label for="barcode-filter-categoria">Categoria</label>
+                                    <select id="barcode-filter-categoria">
+                                        <option value="todas">Todas las categorias</option>
+                                        ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div class="barcode-filter-item">
+                                    <label for="barcode-filter-search">Buscar por Nombre o CB</label>
+                                    <input type="text" id="barcode-filter-search" placeholder="Ej: Alcohol Gel, CB-123...">
+                                </div>
+                                <div class="barcode-filter-item">
+                                    <label for="barcode-filter-insumo">Insumo Especifico (CB)</label>
+                                    <select id="barcode-filter-insumo">
+                                        <option value="">Todos los insumos</option>
+                                        ${inventoryItems.map(item => {
+                                            const name = item.nombre || item.descripcion || 'Sin nombre';
+                                            const code = item.cb || item.id || '';
+                                            return `<option value="${code}">${name} (${code})</option>`;
+                                        }).join('')}
+                                    </select>
+                                </div>
+                                <div class="barcode-filter-actions">
+                                    <button class="btn-barcode-generate" onclick="BarcodeModule.generateBarcodes()">
+                                        Generar Codigos
+                                    </button>
+                                    <button class="btn-barcode-print" onclick="BarcodeModule.printBarcodes()">
+                                        Imprimir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="barcode-results" class="barcode-results">
+                            <div class="barcode-empty">
+                                Seleccione los filtros y haga clic en "Generar Codigos" para visualizar los codigos de barras
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        // Cerrar modal al hacer clic fuera
+        document.getElementById('barcode-modal-overlay').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.remove();
+            }
+        });
+
+        // Evento para generar al presionar Enter en el campo de busqueda
+        document.getElementById('barcode-filter-search').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                BarcodeModule.generateBarcodes();
+            }
+        });
+    }
+
+    /**
+     * Genera los codigos de barras basados en los filtros actuales
+     */
+    function generateBarcodes() {
+        const filters = {
+            categoria: document.getElementById('barcode-filter-categoria')?.value || 'todas',
+            search: document.getElementById('barcode-filter-search')?.value || '',
+            insumoEspecifico: document.getElementById('barcode-filter-insumo')?.value || ''
+        };
+
+        const items = _getInventoryItems();
+        const filteredItems = _filterItems(items, filters);
+        
+        // Mostrar loading
+        const resultsContainer = document.getElementById('barcode-results');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = `
+                <div class="barcode-loading">
+                    <div class="barcode-loading-spinner"></div>
+                    <p>Generando codigos de barras...</p>
+                </div>
+            `;
+        }
+
+        // Pequeno delay para mostrar el loading
+        setTimeout(() => {
+            _generateBarcodes(filteredItems);
+        }, 300);
+    }
+
+    /**
+     * Prepara e imprime los codigos de barras generados
+     */
+    function printBarcodes() {
+        const barcodeItems = document.querySelectorAll('.barcode-item');
+        
+        if (barcodeItems.length === 0) {
+            alert('Primero debe generar los codigos de barras antes de imprimir.');
+            return;
+        }
+
+        // Crear ventana de impresion
+        const printContent = `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
-                <title>Etiquetas CEHAQ - 5x3 cm</title>
+                <title>Impresion de Codigos de Barras - Bodega UChile</title>
                 <style>
-                    @media print {
-                        * { margin: 0; padding: 0; box-sizing: border-box; }
-                        body { 
-                            margin: 0; 
-                            padding: 0; 
-                            background: white;
-                        }
-                        .no-print { display: none !important; }
-                        .barcode-page {
-                            padding: 3mm !important;
-                            width: 100% !important;
-                        }
-                        .barcode-svg {
-                            max-width: 100% !important;
-                            height: auto !important;
-                        }
-                        /* Asegurar que cada etiqueta se imprima correctamente */
-                        .barcode-page > div {
-                            display: grid !important;
-                            grid-template-columns: repeat(auto-fill, 50mm) !important;
-                            gap: 2mm !important;
-                        }
-                        .barcode-page > div > div {
-                            width: 50mm !important;
-                            height: 30mm !important;
-                            page-break-inside: avoid !important;
-                            break-inside: avoid !important;
-                            border: 0.5px solid #ccc !important;
-                        }
-                    }
-                    @page {
-                        size: A4;
-                        margin: 5mm;
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
                     }
                     body {
                         font-family: Arial, sans-serif;
-                        background: #f0f0f0;
-                        margin: 0;
-                        padding: 10px;
+                        padding: 20px;
                     }
-                    .print-controls {
+                    .print-header {
                         text-align: center;
-                        margin-bottom: 15px;
-                        padding: 15px;
-                        background: white;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 3px solid #1a3a6b;
                     }
-                    .print-controls button {
-                        padding: 10px 25px;
-                        margin: 0 8px;
-                        border: none;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        font-weight: bold;
-                        font-size: 14px;
-                        transition: all 0.2s;
-                    }
-                    .btn-print {
-                        background: #1a3a6b;
-                        color: white;
-                    }
-                    .btn-print:hover { background: #0f2447; transform: translateY(-1px); }
-                    .btn-close {
-                        background: #6c757d;
-                        color: white;
-                    }
-                    .btn-close:hover { background: #5a6268; }
-                    .print-info {
-                        margin-top: 10px;
-                        font-size: 12px;
-                        color: #666;
-                    }
-                    .print-info strong {
+                    .print-header h1 {
                         color: #1a3a6b;
+                        font-size: 1.5em;
+                        margin-bottom: 5px;
                     }
-                    @media screen {
-                        .barcode-page {
-                            max-width: 210mm;
-                            margin: 0 auto;
-                            background: white;
-                            padding: 5mm;
-                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                            border-radius: 4px;
+                    .print-header p {
+                        color: #666;
+                        font-size: 0.9em;
+                    }
+                    .print-grid {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 15px;
+                    }
+                    .print-item {
+                        border: 1px solid #ccc;
+                        padding: 15px;
+                        text-align: center;
+                        page-break-inside: avoid;
+                    }
+                    .print-item-name {
+                        font-weight: bold;
+                        font-size: 0.8em;
+                        margin-bottom: 8px;
+                        text-transform: uppercase;
+                    }
+                    .print-item svg {
+                        max-width: 100%;
+                        height: auto;
+                    }
+                    @media print {
+                        .no-print {
+                            display: none;
                         }
                     }
                 </style>
             </head>
             <body>
-                <div class="print-controls no-print">
-                    <button class="btn-print" onclick="window.print()">🖨️ IMPRIMIR ETIQUETAS</button>
-                    <button class="btn-close" onclick="window.close()">✕ CERRAR</button>
-                    <div class="print-info">
-                        💡 <strong>Configuración recomendada:</strong> Tamaño A4, Escala 100%, Sin márgenes adicionales<br>
-                        📏 Etiquetas: 5cm x 3cm | Total: <span id="total-etiquetas">0</span> etiquetas
-                    </div>
+                <div class="print-header">
+                    <h1>Codigos de Barras - Inventario Bodega UChile</h1>
+                    <p>Fecha: ${new Date().toLocaleDateString('es-CL')} - Total: ${barcodeItems.length} insumos</p>
+                    <button class="no-print" onclick="window.print()" style="
+                        margin-top: 15px;
+                        padding: 10px 30px;
+                        background: #1a3a6b;
+                        color: white;
+                        border: none;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-size: 1em;
+                    ">Imprimir</button>
                 </div>
-                <div id="barcode-container"></div>
-                <script>
-                    const container = document.getElementById('barcode-container');
-                    const content = ${JSON.stringify(container.outerHTML)};
-                    container.innerHTML = content;
-                    
-                    // Contar etiquetas
-                    const labels = container.querySelectorAll('.barcode-page > div > div');
-                    document.getElementById('total-etiquetas').textContent = labels.length;
-                    
-                    // Auto-print si hay pocas etiquetas
-                    if (labels.length > 0 && labels.length <= 20) {
-                        setTimeout(() => window.print(), 500);
-                    }
-                <\/script>
+                <div class="print-grid">
+                    ${Array.from(barcodeItems).map(item => {
+                        const clonedItem = item.cloneNode(true);
+                        return `<div class="print-item">${clonedItem.outerHTML}</div>`;
+                    }).join('')}
+                </div>
             </body>
             </html>
-        `);
-        printWindow.document.close();
-    },
+        `;
 
-    // Filtrar insumos según criterios
-    filterInsumos(insumos, filtro) {
-        let filtered = [...insumos];
-
-        if (filtro === 'con-codigo') {
-            filtered = filtered.filter(i => i.codigo_barras && i.codigo_barras.trim() !== '');
-        } else if (filtro === 'sin-codigo') {
-            filtered = filtered.filter(i => !i.codigo_barras || i.codigo_barras.trim() === '');
-        } else if (filtro === 'stock-critico') {
-            filtered = filtered.filter(i => i.stock <= CONFIG.porcentajeCritico);
-        } else if (filtro === 'por-vencer') {
-            const hoy = new Date();
-            const diasVencimiento = CONFIG.diasVencimiento || 30;
-            filtered = filtered.filter(i => {
-                if (!i.vencimiento) return false;
-                const venc = new Date(i.vencimiento);
-                const diff = Math.ceil((venc - hoy) / (1000 * 60 * 60 * 24));
-                return diff >= 0 && diff <= diasVencimiento;
-            });
-        } else if (filtro === 'todos') {
-            filtered = filtered.filter(i => i.codigo_barras && i.codigo_barras.trim() !== '');
+        // Abrir ventana de impresion
+        if (printWindow) {
+            printWindow.close();
         }
-
-        return filtered;
+        
+        printWindow = window.open('', '_blank', 'width=900,height=700');
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        
+        // Esperar a que carguen los SVG y luego imprimir
+        printWindow.onload = function() {
+            // Copiar los SVG generados
+            barcodeItems.forEach((item, index) => {
+                const originalSvg = item.querySelector('svg');
+                const printItems = printWindow.document.querySelectorAll('.print-item');
+                if (printItems[index] && originalSvg) {
+                    const targetSvg = printItems[index].querySelector('svg');
+                    if (targetSvg) {
+                        targetSvg.innerHTML = originalSvg.innerHTML;
+                        targetSvg.setAttribute('viewBox', originalSvg.getAttribute('viewBox') || '');
+                    }
+                }
+            });
+        };
     }
-};
+
+    /**
+     * Cierra la ventana de impresion
+     */
+    function closePrintWindow() {
+        if (printWindow) {
+            printWindow.close();
+            printWindow = null;
+        }
+    }
+
+    // API publica
+    return {
+        init: init,
+        openBarcodeModal: openBarcodeModal,
+        generateBarcodes: generateBarcodes,
+        printBarcodes: printBarcodes,
+        closePrintWindow: closePrintWindow
+    };
+})();
+
+// Auto-inicializar cuando el DOM este listo
+document.addEventListener('DOMContentLoaded', () => {
+    // Pequeno retraso para asegurar que la aplicacion principal se haya cargado
+    setTimeout(() => {
+        BarcodeModule.init();
+    }, 1000);
+});
+
+// Exponer globalmente para acceso desde HTML
+window.BarcodeModule = BarcodeModule;
