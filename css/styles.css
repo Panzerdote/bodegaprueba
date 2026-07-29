@@ -242,7 +242,116 @@ tr:nth-child(even) td { background: #fafbfc; }
 #scanner-viewport video { width: 100%; height: 100%; object-fit: cover; }
 #scanner-viewport canvas { display: none; }
 
-@media (max-width: 1024px) { .dashboard-cards { grid-template-columns: repeat(3, 1fr); } .container { padding: 15px; } }
+/* ==================== ESTILOS PARA ETIQUETAS DE CÓDIGOS DE BARRAS 5x3 cm ==================== */
+.barcode-page {
+    background: white;
+    padding: 3mm;
+    width: 100%;
+    font-family: Arial, sans-serif;
+}
+
+.barcode-page .barcode-svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Estilos para impresión de etiquetas */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+    
+    body {
+        margin: 0;
+        padding: 0;
+        background: white;
+    }
+    
+    .barcode-page {
+        padding: 3mm !important;
+        margin: 0 !important;
+    }
+    
+    .barcode-page > div {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fill, 50mm) !important;
+        gap: 2mm !important;
+        justify-content: center !important;
+    }
+    
+    .barcode-page > div > div {
+        width: 50mm !important;
+        height: 30mm !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        border: 0.5px solid #ccc !important;
+        padding: 1mm !important;
+        box-sizing: border-box !important;
+    }
+    
+    .barcode-svg {
+        max-width: 100% !important;
+        height: auto !important;
+        max-height: 22mm !important;
+    }
+}
+
+/* Estilos para vista previa en pantalla */
+.barcode-page {
+    max-width: 210mm;
+    margin: 0 auto;
+    background: white;
+    padding: 5mm;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-radius: 4px;
+}
+
+.barcode-page > div {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 50mm);
+    gap: 2mm;
+    justify-content: center;
+}
+
+.barcode-page > div > div {
+    width: 50mm;
+    height: 30mm;
+    padding: 1mm;
+    border: 1px solid #e0e0e0;
+    border-radius: 2px;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.barcode-page .barcode-svg {
+    width: 100%;
+    height: auto;
+    max-height: 22mm;
+    object-fit: contain;
+}
+
+.barcode-page .barcode-info {
+    font-size: 6px;
+    color: #333;
+    text-align: center;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 1mm;
+    max-height: 8mm;
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 1024px) { 
+    .dashboard-cards { grid-template-columns: repeat(3, 1fr); } 
+    .container { padding: 15px; } 
+}
 
 @media (max-width: 768px) {
     .hamburger { display: block; }
@@ -256,51 +365,37 @@ tr:nth-child(even) td { background: #fafbfc; }
     .header-actions { gap: 5px; }
     .header-actions .btn { padding: 6px 10px; font-size: 11px; }
     .dashboard-cards { grid-template-columns: repeat(5, 1fr); gap: 6px; }
-    .card { padding: 10px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-top-width: 2px; }
-    .card-icon { display: none; }
-    .card-title { font-size: 8px; margin-bottom: 4px; letter-spacing: 0; line-height: 1.2; text-align: center; }
-    .card-value { font-size: 16px; line-height: 1; }
+    .card { padding: 10px 8px; }
+    .card-value { font-size: 18px; }
+    .card-title { font-size: 8px; }
     .container { padding: 10px; }
-    .section { padding: 10px; margin-bottom: 15px; }
-    .section h2 { font-size: 14px; }
-    .table-container { max-height: 45vh; }
-    table { font-size: 10px; width: 100%; min-width: auto; }
-    th { padding: 6px 4px; font-size: 8px; white-space: nowrap; }
-    td { padding: 5px 4px; font-size: 10px; }
-    .form-row { grid-template-columns: 1fr; gap: 0; }
-    .form-group { margin-bottom: 10px; }
-    .form-group input, .form-group select, .form-group textarea { padding: 10px; font-size: 16px; }
-    .modal-content { width: 100%; max-width: 100%; margin: 0; padding: 15px; max-height: 85vh; border-radius: 15px 15px 0 0; position: fixed; bottom: 0; left: 0; right: 0; animation: slideUp 0.3s ease; border-top: 4px solid var(--primary); }
-    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    .modal-content h2 { font-size: 16px; margin-bottom: 15px; padding-right: 35px; }
-    .modal-close { top: 10px; right: 10px; font-size: 20px; }
-    .form-actions { flex-direction: column; gap: 8px; }
-    .form-actions .btn { width: 100%; justify-content: center; }
-    .toast { bottom: 20px; right: 10px; left: 10px; max-width: none; text-align: center; font-size: 13px; padding: 12px 15px; }
-    .badge { padding: 2px 6px; font-size: 9px; }
-    .btn-sm { padding: 4px 8px; font-size: 10px; }
-
-    #section-movimientos .section { padding: 8px; }
-    #section-movimientos .section > div:first-child { flex-direction: column !important; gap: 8px !important; }
-    #filtro-tipo-movimiento { width: 100% !important; min-width: 100% !important; font-size: 14px !important; padding: 10px !important; }
-    #filtro-usuario-movimiento { width: 100% !important; min-width: 100% !important; font-size: 14px !important; padding: 10px !important; }
-    #busqueda-movimientos { width: 100% !important; flex: none !important; font-size: 14px !important; padding: 10px !important; margin-bottom: 0 !important; }
-    #tabla-movimientos th:nth-child(5), #tabla-movimientos td:nth-child(5),
-    #tabla-movimientos th:nth-child(6), #tabla-movimientos td:nth-child(6),
-    #tabla-movimientos th:nth-child(8), #tabla-movimientos td:nth-child(8) { display: none; }
-
-    #tab-secciones, #tab-unidades { font-size: 11px; padding: 8px 12px; }
-    #scanner-viewport { height: 200px; }
+    .section { padding: 12px; }
+    .modal-content { width: 95%; margin: 20px auto; padding: 15px; }
+    .form-row { grid-template-columns: 1fr; }
+    table { font-size: 10px; }
+    th, td { padding: 6px 8px; }
+    .sidebar-header { padding: 20px 15px; }
+    .escudo-container { width: 50px; height: 70px; }
+    .barcode-page > div {
+        grid-template-columns: repeat(auto-fill, 45mm) !important;
+        gap: 1.5mm !important;
+    }
+    .barcode-page > div > div {
+        width: 45mm !important;
+        height: 27mm !important;
+    }
 }
 
 @media (max-width: 480px) {
-    .dashboard-cards { grid-template-columns: repeat(5, 1fr); gap: 4px; }
-    .card { padding: 8px 4px; }
-    .card-title { font-size: 7px; }
-    .card-value { font-size: 14px; }
+    .dashboard-cards { grid-template-columns: repeat(3, 1fr); }
     .header h1 { font-size: 13px; }
-    .header-actions .btn { padding: 5px 8px; font-size: 10px; }
-    .modal-content { max-height: 80vh; padding: 12px; }
-    .modal-content h2 { font-size: 15px; }
-    #tab-secciones, #tab-unidades { font-size: 10px; padding: 6px 10px; }
+    .header-actions .btn { font-size: 10px; padding: 4px 8px; }
+    .barcode-page > div {
+        grid-template-columns: repeat(auto-fill, 40mm) !important;
+        gap: 1mm !important;
+    }
+    .barcode-page > div > div {
+        width: 40mm !important;
+        height: 24mm !important;
+    }
 }
