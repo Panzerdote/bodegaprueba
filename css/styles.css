@@ -347,7 +347,6 @@ tr:nth-child(even) td { background: #fafbfc; }
     max-height: 8mm;
 }
 
-/* ==================== RESPONSIVE ==================== */
 @media (max-width: 1024px) { 
     .dashboard-cards { grid-template-columns: repeat(3, 1fr); } 
     .container { padding: 15px; } 
