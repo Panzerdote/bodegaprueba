@@ -881,9 +881,6 @@ tr:nth-child(even) td {
         font-size: 16px;
     }
 
-    /* ============================================ */
-    /* MODAL ADAPTADO PARA MÓVIL */
-    /* ============================================ */
     .modal-content {
         width: 100%;
         max-width: 100%;
@@ -916,7 +913,6 @@ tr:nth-child(even) td {
         font-size: 20px;
     }
 
-    /* Form actions en columna */
     .form-actions {
         flex-direction: column;
         gap: 8px;
@@ -927,9 +923,6 @@ tr:nth-child(even) td {
         justify-content: center;
     }
 
-    /* ============================================ */
-    /* PÁGINA DE MOVIMIENTOS EN MÓVIL */
-    /* ============================================ */
     #section-movimientos .section {
         padding: 8px;
     }
@@ -979,7 +972,6 @@ tr:nth-child(even) td {
         white-space: nowrap;
     }
 
-    /* Ocultar columnas Stock Ant, Stock Nuevo y Comentarios en móvil */
     #tabla-movimientos th:nth-child(5),
     #tabla-movimientos td:nth-child(5),
     #tabla-movimientos th:nth-child(6),
@@ -994,7 +986,6 @@ tr:nth-child(even) td {
         font-size: 8px;
     }
 
-    /* Toast */
     .toast {
         bottom: 20px;
         right: 10px;
@@ -1005,19 +996,16 @@ tr:nth-child(even) td {
         padding: 12px 15px;
     }
 
-    /* Badges más pequeños */
     .badge {
         padding: 2px 6px;
         font-size: 9px;
     }
 
-    /* Botones de acción en tablas */
     .btn-sm {
         padding: 4px 8px;
         font-size: 10px;
     }
 
-    /* Pestañas de configuración */
     #tab-secciones,
     #tab-unidades {
         font-size: 11px;
@@ -1025,9 +1013,6 @@ tr:nth-child(even) td {
     }
 }
 
-/* ============================================ */
-/* RESPONSIVE - MÓVIL PEQUEÑO */
-/* ============================================ */
 @media (max-width: 480px) {
     .dashboard-cards {
         grid-template-columns: repeat(5, 1fr);
@@ -1055,7 +1040,6 @@ tr:nth-child(even) td {
         font-size: 10px;
     }
 
-    /* Modal aún más compacto */
     .modal-content {
         max-height: 80vh;
         padding: 12px;
@@ -1065,16 +1049,13 @@ tr:nth-child(even) td {
         font-size: 15px;
     }
 
-    /* Pestañas más compactas */
     #tab-secciones,
     #tab-unidades {
         font-size: 10px;
         padding: 6px 10px;
     }
 }
-/* ============================================ */
-/* CHECKBOXES DE FILTRO */
-/* ============================================ */
+
 #section-inventario input[type="checkbox"] {
     width: 16px;
     height: 16px;
@@ -1100,4 +1081,12 @@ tr:nth-child(even) td {
     color: white;
     border-color: var(--primary);
     font-weight: 600;
+}
+#scanner-viewport video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+#scanner-viewport canvas {
+    display: none;
 }
