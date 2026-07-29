@@ -11,28 +11,16 @@ const App = {
         this.user = window.currentUser;
         this.bodega = window.currentBodega || 'BODEGA';
         
-        // Configurar conexión
         UI.setConnectionStatus('warning', 'CONECTANDO...');
         
         try {
-            // Cargar datos iniciales
             await this.cargarDatosIniciales();
-            
-            // Configurar eventos
             this.setupEventListeners();
-            
-            // Cargar vista inicial
             this.mostrarVista('dashboard');
-            
-            // Actualizar dashboard
             await this.actualizarDashboard();
-            
             UI.setConnectionStatus('success', 'CONECTADO');
-            
-            // Cargar movimientos recientes en el dashboard
             this.movimientos = await DB.getMovimientos(10);
             this.renderMovimientosRecientes();
-            
         } catch (error) {
             console.error('Error en init:', error);
             UI.setConnectionStatus('error', 'ERROR DE CONEXIÓN');
@@ -46,8 +34,6 @@ const App = {
             this.secciones = await DB.getSecciones(this.bodega);
             this.config = await DB.getConfig(this.bodega);
             this.movimientos = await DB.getMovimientos(50, this.bodega);
-            
-            // Actualizar badge del inventario
             document.getElementById('total-badge').textContent = this.inventario.length;
         } catch (error) {
             console.error('Error cargando datos:', error);
@@ -56,7 +42,6 @@ const App = {
     },
 
     setupEventListeners() {
-        // Navegación del sidebar
         document.querySelectorAll('[data-section]').forEach(el => {
             el.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -65,7 +50,6 @@ const App = {
             });
         });
 
-        // Botones de ingreso
         document.getElementById('btn-ingreso')?.addEventListener('click', () => {
             this.mostrarModalIngreso();
         });
@@ -73,7 +57,6 @@ const App = {
             this.mostrarModalIngreso();
         });
 
-        // Botones de salida
         document.getElementById('btn-salida')?.addEventListener('click', () => {
             this.mostrarModalSalida();
         });
@@ -81,7 +64,6 @@ const App = {
             this.mostrarModalSalida();
         });
 
-        // Buscar anaquel
         document.getElementById('btn-buscar-anaquel')?.addEventListener('click', () => {
             this.mostrarModalBuscarAnaquel();
         });
@@ -89,27 +71,23 @@ const App = {
             this.mostrarModalBuscarAnaquel();
         });
 
-        // Gestión de secciones y unidades
         document.getElementById('btn-gestionar')?.addEventListener('click', () => {
             this.mostrarModalGestion();
         });
 
-        // Exportar Excel
         document.getElementById('btn-exportar')?.addEventListener('click', () => {
             this.exportarInventarioExcel();
         });
 
-        // Gestión de usuarios (admin)
         document.getElementById('btn-admin-usuarios')?.addEventListener('click', () => {
             this.mostrarModalUsuarios();
         });
 
-        // Generar códigos de barras
+        // NUEVO: Listener para generar códigos de barras
         document.getElementById('btn-generar-codigos')?.addEventListener('click', () => {
             this.mostrarDialogoGenerarCodigos();
         });
 
-        // Filtros de inventario
         document.getElementById('filtro-stock-critico')?.addEventListener('change', () => {
             this.renderInventario();
         });
@@ -120,42 +98,35 @@ const App = {
             this.renderInventario();
         });
 
-        // Búsqueda en movimientos
         document.getElementById('busqueda-movimientos')?.addEventListener('input', () => {
             this.renderMovimientos();
         });
 
-        // Botón cambiar bodega
         document.querySelector('.btn-accent[onclick="cambiarBodega()"]')?.addEventListener('click', () => {
             window.location.href = 'seleccionar.html';
         });
 
-        // Cerrar modal al hacer clic fuera
         document.getElementById('modal')?.addEventListener('click', (e) => {
             if (e.target === document.getElementById('modal')) {
                 UI.closeModal();
             }
         });
 
-        // Tecla Escape para cerrar modal
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') UI.closeModal();
         });
     },
 
     mostrarVista(vista) {
-        // Ocultar todas las secciones
         document.querySelectorAll('[id^="section-"]').forEach(el => {
             el.style.display = 'none';
         });
 
-        // Mostrar la sección seleccionada
         const section = document.getElementById(`section-${vista}`);
         if (section) {
             section.style.display = 'block';
         }
 
-        // Actualizar menú activo
         document.querySelectorAll('.sidebar-menu a').forEach(el => {
             el.classList.remove('active');
         });
@@ -164,7 +135,6 @@ const App = {
             menuItem.classList.add('active');
         }
 
-        // Actualizar título y acciones del header
         const titles = {
             dashboard: 'DASHBOARD',
             inventario: 'INVENTARIO COMPLETO',
@@ -172,7 +142,6 @@ const App = {
         };
         document.getElementById('page-title').textContent = titles[vista] || '';
 
-        // Actualizar botones del header según la vista
         const headerActions = document.getElementById('header-actions');
         if (vista === 'dashboard') {
             headerActions.innerHTML = `
@@ -189,7 +158,6 @@ const App = {
                     SALIDA
                 </button>
             `;
-            // Re-asignar eventos
             document.getElementById('header-btn-ingreso')?.addEventListener('click', () => this.mostrarModalIngreso());
             document.getElementById('header-btn-salida')?.addEventListener('click', () => this.mostrarModalSalida());
         } else if (vista === 'inventario') {
@@ -209,8 +177,6 @@ const App = {
             `;
             document.getElementById('header-btn-ingreso')?.addEventListener('click', () => this.mostrarModalIngreso());
             document.getElementById('header-btn-buscar')?.addEventListener('click', () => this.mostrarModalBuscarAnaquel());
-            
-            // Renderizar inventario si estamos en esa vista
             this.renderInventario();
         } else if (vista === 'movimientos') {
             headerActions.innerHTML = `
@@ -226,29 +192,23 @@ const App = {
         }
     },
 
-    // ==================== DASHBOARD ====================
     async actualizarDashboard() {
         try {
             const inventario = await DB.getInventario(this.bodega);
             this.inventario = inventario;
             
-            // Total insumos
             document.getElementById('total-insumos').textContent = inventario.length;
             
-            // Stock total
             const stockTotal = inventario.reduce((sum, item) => sum + (item.stock || 0), 0);
             document.getElementById('stock-total').textContent = stockTotal;
             
-            // Secciones activas
             const secciones = await DB.getSecciones(this.bodega);
             this.secciones = secciones;
             document.getElementById('secciones-activas').textContent = secciones.length;
             
-            // Stock crítico
             const critico = inventario.filter(item => item.stock <= CONFIG.porcentajeCritico);
             document.getElementById('stock-critico').textContent = critico.length;
             
-            // Vencimientos próximos
             const hoy = new Date();
             const diasVencimiento = CONFIG.diasVencimiento || 30;
             const porVencer = inventario.filter(item => {
@@ -259,12 +219,9 @@ const App = {
             });
             document.getElementById('vencimientos-proximos').textContent = porVencer.length;
             
-            // Alertas de stock crítico
             this.renderAlertasStock(critico);
             
-            // Actualizar badge
             document.getElementById('total-badge').textContent = inventario.length;
-            
         } catch (error) {
             console.error('Error actualizando dashboard:', error);
         }
@@ -340,7 +297,6 @@ const App = {
         container.innerHTML = html;
     },
 
-    // ==================== INVENTARIO ====================
     renderInventario() {
         const container = document.getElementById('tabla-inventario');
         if (!container) return;
@@ -351,7 +307,6 @@ const App = {
         
         let items = [...this.inventario];
         
-        // Aplicar filtros
         if (stockCritico) {
             items = items.filter(item => item.stock <= CONFIG.porcentajeCritico);
         }
@@ -374,7 +329,6 @@ const App = {
             });
         }
         
-        // Actualizar contador
         document.getElementById('contador-inventario').textContent = items.length;
         
         if (items.length === 0) {
@@ -440,7 +394,6 @@ const App = {
         container.innerHTML = html;
     },
 
-    // ==================== MOVIMIENTOS ====================
     async renderMovimientos() {
         const container = document.getElementById('tabla-movimientos');
         if (!container) return;
@@ -453,7 +406,6 @@ const App = {
             let movimientos = await DB.getTodosMovimientos(this.bodega);
             this.movimientos = movimientos;
             
-            // Poblar filtro de usuarios
             const usuariosSelect = document.getElementById('filtro-usuario-movimiento');
             if (usuariosSelect && usuariosSelect.options.length <= 1) {
                 const usuarios = [...new Set(movimientos.map(m => m.usuario).filter(Boolean))];
@@ -465,7 +417,6 @@ const App = {
                 });
             }
             
-            // Aplicar filtros
             if (tipo !== 'TODOS') {
                 movimientos = movimientos.filter(m => m.tipo === tipo);
             }
@@ -519,14 +470,12 @@ const App = {
             });
             html += '</tbody></table>';
             container.innerHTML = html;
-            
         } catch (error) {
             console.error('Error renderizando movimientos:', error);
             container.innerHTML = `<div class="empty-state"><p>Error al cargar movimientos</p></div>`;
         }
     },
 
-    // ==================== MODALES ====================
     mostrarModalIngreso() {
         const secciones = this.secciones;
         const unidades = this.unidades || [];
@@ -674,7 +623,6 @@ const App = {
             return;
         }
         
-        // Mostrar el primero con stock
         const item = inventario[0];
         document.getElementById('salida-nombre').textContent = item.nombre;
         document.getElementById('salida-stock').textContent = `${item.stock} ${item.unidad || ''}`;
@@ -683,7 +631,6 @@ const App = {
         document.getElementById('salida-resultados').style.display = 'none';
         document.getElementById('salida-cantidad').focus();
         
-        // Guardar ID del insumo seleccionado
         document.getElementById('form-salida').dataset.itemId = item.id;
     },
 
@@ -713,11 +660,9 @@ const App = {
             UI.showToast(`✅ Ingreso registrado: ${nombre} (${cantidad} ${unidad})`, 'success');
             UI.closeModal();
             
-            // Recargar datos
             await this.cargarDatosIniciales();
             await this.actualizarDashboard();
             this.renderInventario();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -746,11 +691,9 @@ const App = {
             
             UI.closeModal();
             
-            // Recargar datos
             await this.cargarDatosIniciales();
             await this.actualizarDashboard();
             this.renderInventario();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -770,8 +713,6 @@ const App = {
             <div id="resultado-anaquel" style="margin-top:15px;"></div>
         `;
         UI.openModal(content);
-        
-        // Auto-focus
         setTimeout(() => document.getElementById('buscar-anaquel-input')?.focus(), 100);
     },
 
@@ -876,11 +817,9 @@ const App = {
             await DB.addSeccion(seccion, descripcion, anaquel);
             UI.showToast('✅ Sección agregada', 'success');
             
-            // Recargar datos
             this.secciones = await DB.getSecciones(this.bodega);
             this.mostrarModalGestion();
             await this.actualizarDashboard();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -896,7 +835,6 @@ const App = {
             this.secciones = await DB.getSecciones(this.bodega);
             this.mostrarModalGestion();
             await this.actualizarDashboard();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -916,7 +854,6 @@ const App = {
             
             this.unidades = await DB.getUnidadesMedida(this.bodega);
             this.mostrarModalGestion();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -931,13 +868,11 @@ const App = {
             
             this.unidades = await DB.getUnidadesMedida(this.bodega);
             this.mostrarModalGestion();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
     },
 
-    // ==================== EXPORTACIONES ====================
     async exportarInventarioExcel() {
         try {
             const data = this.inventario.map(item => ({
@@ -957,7 +892,6 @@ const App = {
                 return;
             }
             
-            // Crear CSV
             const headers = Object.keys(data[0]);
             let csv = headers.join(',') + '\n';
             data.forEach(row => {
@@ -970,7 +904,6 @@ const App = {
                 }).join(',') + '\n';
             });
             
-            // Descargar
             const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
@@ -979,7 +912,6 @@ const App = {
             URL.revokeObjectURL(link.href);
             
             UI.showToast('✅ Exportación completada', 'success');
-            
         } catch (error) {
             console.error('Error exportando:', error);
             UI.showToast('❌ Error al exportar', 'error');
@@ -1027,14 +959,13 @@ const App = {
             URL.revokeObjectURL(link.href);
             
             UI.showToast('✅ Exportación completada', 'success');
-            
         } catch (error) {
             console.error('Error exportando:', error);
             UI.showToast('❌ Error al exportar', 'error');
         }
     },
 
-    // ==================== CÓDIGOS DE BARRAS ====================
+    // ==================== NUEVA FUNCIONALIDAD: CÓDIGOS DE BARRAS ====================
     mostrarDialogoGenerarCodigos() {
         const content = `
             <h2>🏷️ GENERAR ETIQUETAS (5cm x 3cm)</h2>
@@ -1104,10 +1035,8 @@ const App = {
         try {
             UI.showToast('🔄 Generando etiquetas...', 'info');
             
-            // Obtener inventario actualizado
             const inventario = await DB.getInventario(this.bodega);
             
-            // Aplicar filtros
             let insumosFiltrados = BarcodeGenerator.filterInsumos(inventario, filtro);
 
             if (insumosFiltrados.length === 0) {
@@ -1116,7 +1045,6 @@ const App = {
                 return;
             }
 
-            // Configurar opciones
             const options = {
                 format: formato,
                 displayValue: true,
@@ -1125,7 +1053,6 @@ const App = {
                 fontSize: formato === 'EAN13' || formato === 'UPC' ? 9 : 10
             };
 
-            // Filtrar solo los que tienen código
             const conCodigo = insumosFiltrados.filter(i => i.codigo_barras && i.codigo_barras.trim() !== '');
             
             if (conCodigo.length === 0) {
@@ -1140,7 +1067,6 @@ const App = {
                 return;
             }
 
-            // Generar y mostrar para impresión
             BarcodeGenerator.printBarcodes(conCodigo, options);
 
             UI.closeModal();
@@ -1152,95 +1078,8 @@ const App = {
         }
     },
 
-    // ==================== ADMINISTRACIÓN ====================
-    mostrarModalUsuarios() {
-        const content = `
-            <h2>👥 GESTIÓN DE USUARIOS</h2>
-            <div id="lista-usuarios" style="margin-bottom:15px; max-height:300px; overflow-y:auto;">
-                <div class="spinner" style="margin:20px auto;"></div>
-            </div>
-            <div class="form-actions">
-                <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button>
-            </div>
-        `;
-        UI.openModal(content);
-        this.cargarUsuarios();
-    },
+    // ==================== FIN NUEVA FUNCIONALIDAD ====================
 
-    async cargarUsuarios() {
-        const container = document.getElementById('lista-usuarios');
-        if (!container) return;
-        
-        try {
-            const { data: usuarios, error } = await supabaseClient
-                .from('usuarios')
-                .select('*')
-                .order('nombre');
-            
-            if (error) throw error;
-            
-            let html = '<table><thead><tr><th>NOMBRE</th><th>USUARIO</th><th>ROL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>';
-            
-            usuarios.forEach(user => {
-                html += `<tr>
-                    <td>${user.nombre || '-'}</td>
-                    <td>${user.usuario}</td>
-                    <td><span class="badge ${user.rol === 'admin' ? 'badge-success' : 'badge-warning'}">${user.rol || 'pendiente'}</span></td>
-                    <td><span class="badge ${user.activo ? 'badge-success' : 'badge-danger'}">${user.activo ? 'ACTIVO' : 'PENDIENTE'}</span></td>
-                    <td>
-                        ${!user.activo ? `<button class="btn btn-sm btn-success" onclick="App.activarUsuario('${user.id}')">ACTIVAR</button>` : ''}
-                        ${user.rol !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="App.eliminarUsuario('${user.id}')">ELIMINAR</button>` : ''}
-                    </td>
-                </tr>`;
-            });
-            html += '</tbody></table>';
-            container.innerHTML = html;
-            
-        } catch (error) {
-            console.error('Error cargando usuarios:', error);
-            container.innerHTML = `<div class="empty-state"><p>Error al cargar usuarios</p></div>`;
-        }
-    },
-
-    async activarUsuario(id) {
-        if (!confirm('¿Activar este usuario?')) return;
-        
-        try {
-            const { error } = await supabaseClient
-                .from('usuarios')
-                .update({ activo: true, rol: 'usuario' })
-                .eq('id', id);
-            
-            if (error) throw error;
-            
-            UI.showToast('✅ Usuario activado', 'success');
-            this.cargarUsuarios();
-            
-        } catch (error) {
-            UI.showToast(`❌ Error: ${error.message}`, 'error');
-        }
-    },
-
-    async eliminarUsuario(id) {
-        if (!confirm('¿Eliminar este usuario permanentemente?')) return;
-        
-        try {
-            const { error } = await supabaseClient
-                .from('usuarios')
-                .delete()
-                .eq('id', id);
-            
-            if (error) throw error;
-            
-            UI.showToast('✅ Usuario eliminado', 'success');
-            this.cargarUsuarios();
-            
-        } catch (error) {
-            UI.showToast(`❌ Error: ${error.message}`, 'error');
-        }
-    },
-
-    // ==================== UTILIDADES ====================
     escaneoCodigoBarras(inputId) {
         const content = `
             <h2>📷 ESCANEAR CÓDIGO DE BARRAS</h2>
@@ -1381,7 +1220,6 @@ const App = {
             
             await DB.updateInventarioItem(id, updates);
             
-            // Registrar movimiento de edición
             await DB.addMovimiento({
                 tipo: 'EDICION',
                 insumo: updates.nombre,
@@ -1395,11 +1233,9 @@ const App = {
             UI.showToast('✅ Insumo actualizado correctamente', 'success');
             UI.closeModal();
             
-            // Recargar datos
             await this.cargarDatosIniciales();
             await this.actualizarDashboard();
             this.renderInventario();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -1412,7 +1248,6 @@ const App = {
             const item = await DB.getInventarioItem(id);
             await DB.deleteInventarioItem(id);
             
-            // Registrar movimiento de eliminación
             await DB.addMovimiento({
                 tipo: 'ELIMINACION',
                 insumo: item.nombre,
@@ -1425,11 +1260,9 @@ const App = {
             
             UI.showToast('✅ Insumo eliminado', 'success');
             
-            // Recargar datos
             await this.cargarDatosIniciales();
             await this.actualizarDashboard();
             this.renderInventario();
-            
         } catch (error) {
             UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
@@ -1448,6 +1281,90 @@ const App = {
             UI.showToast('🔄 Datos actualizados', 'success');
         } catch (error) {
             UI.showToast('❌ Error al recargar datos', 'error');
+        }
+    },
+
+    mostrarModalUsuarios() {
+        const content = `
+            <h2>👥 GESTIÓN DE USUARIOS</h2>
+            <div id="lista-usuarios" style="margin-bottom:15px; max-height:300px; overflow-y:auto;">
+                <div class="spinner" style="margin:20px auto;"></div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button>
+            </div>
+        `;
+        UI.openModal(content);
+        this.cargarUsuarios();
+    },
+
+    async cargarUsuarios() {
+        const container = document.getElementById('lista-usuarios');
+        if (!container) return;
+        
+        try {
+            const { data: usuarios, error } = await supabaseClient
+                .from('usuarios')
+                .select('*')
+                .order('nombre');
+            
+            if (error) throw error;
+            
+            let html = '<table><thead><tr><th>NOMBRE</th><th>USUARIO</th><th>ROL</th><th>ESTADO</th><th>ACCIONES</th></tr></thead><tbody>';
+            
+            usuarios.forEach(user => {
+                html += `<tr>
+                    <td>${user.nombre || '-'}</td>
+                    <td>${user.usuario}</td>
+                    <td><span class="badge ${user.rol === 'admin' ? 'badge-success' : 'badge-warning'}">${user.rol || 'pendiente'}</span></td>
+                    <td><span class="badge ${user.activo ? 'badge-success' : 'badge-danger'}">${user.activo ? 'ACTIVO' : 'PENDIENTE'}</span></td>
+                    <td>
+                        ${!user.activo ? `<button class="btn btn-sm btn-success" onclick="App.activarUsuario('${user.id}')">ACTIVAR</button>` : ''}
+                        ${user.rol !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="App.eliminarUsuario('${user.id}')">ELIMINAR</button>` : ''}
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error cargando usuarios:', error);
+            container.innerHTML = `<div class="empty-state"><p>Error al cargar usuarios</p></div>`;
+        }
+    },
+
+    async activarUsuario(id) {
+        if (!confirm('¿Activar este usuario?')) return;
+        
+        try {
+            const { error } = await supabaseClient
+                .from('usuarios')
+                .update({ activo: true, rol: 'usuario' })
+                .eq('id', id);
+            
+            if (error) throw error;
+            
+            UI.showToast('✅ Usuario activado', 'success');
+            this.cargarUsuarios();
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
+        }
+    },
+
+    async eliminarUsuario(id) {
+        if (!confirm('¿Eliminar este usuario permanentemente?')) return;
+        
+        try {
+            const { error } = await supabaseClient
+                .from('usuarios')
+                .delete()
+                .eq('id', id);
+            
+            if (error) throw error;
+            
+            UI.showToast('✅ Usuario eliminado', 'success');
+            this.cargarUsuarios();
+        } catch (error) {
+            UI.showToast(`❌ Error: ${error.message}`, 'error');
         }
     }
 };
