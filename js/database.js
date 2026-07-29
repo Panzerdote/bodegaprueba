@@ -17,6 +17,7 @@ const DB = {
         if (error) { if (error.code === '23505') throw new Error('EL ANAQUEL ' + seccion + anaquel + ' YA EXISTE'); throw error; } return data[0];
     },
     async deleteSeccion(id) { const { error } = await supabaseClient.from('secciones').delete().eq('id', id); if (error) throw error; return true; },
+
     async getInventario(bodega) {
         const { data, error } = await supabaseClient.from('inventario').select('*').eq('bodega', bodega || window.currentBodega || 'BODEGA').order('seccion').order('anaquel');
         if (error) throw error; return data || [];
@@ -43,6 +44,7 @@ const DB = {
         if (error) throw error; return data[0];
     },
     async deleteInventarioItem(id) { const { error } = await supabaseClient.from('inventario').delete().eq('id', id); if (error) throw error; return true; },
+
     async getMovimientos(limit = 50, bodega) {
         const { data, error } = await supabaseClient.from('movimientos').select('*').eq('bodega', bodega || window.currentBodega || 'BODEGA').order('fecha', { ascending: false }).limit(limit);
         if (error) throw error; return data || [];
@@ -66,10 +68,12 @@ const DB = {
         }]).select();
         if (error) throw error; return data[0];
     },
+
     async getConfig(bodega) {
         const { data, error } = await supabaseClient.from('configuracion').select('*').eq('bodega', bodega || window.currentBodega || 'BODEGA').order('id').limit(1).single();
         if (error) return { porcentaje_critico: 20, dias_vencimiento: 30 }; return data;
     },
+
     async getUnidadesMedida(bodega) {
         const { data, error } = await supabaseClient.from('unidades_medida').select('*').eq('bodega', bodega || window.currentBodega || 'BODEGA').order('nombre');
         if (error) throw error; return data || [];
@@ -80,6 +84,7 @@ const DB = {
         if (error) { if (error.code === '23505') throw new Error('LA UNIDAD YA EXISTE'); throw error; } return data[0];
     },
     async deleteUnidadMedida(id) { const { error } = await supabaseClient.from('unidades_medida').delete().eq('id', id); if (error) throw error; return true; },
+
     async buscarInsumosNombre(busqueda) {
         const bodega = window.currentBodega || 'BODEGA';
         const { data, error } = await supabaseClient.from('inventario').select('nombre, unidad').ilike('nombre', `%${busqueda}%`).eq('bodega', bodega).order('nombre').limit(20);
@@ -88,12 +93,13 @@ const DB = {
         (data || []).forEach(item => { const nl = item.nombre.toLowerCase(); if (!nombres.has(nl)) { nombres.add(nl); unicos.push(item); } });
         return unicos.slice(0, 10);
     },
+
     async buscarPorCodigoBarras(codigo) {
         const bodega = window.currentBodega || 'BODEGA';
         const { data, error } = await supabaseClient.from('inventario').select('*').eq('codigo_barras', codigo).eq('bodega', bodega).order('stock', { ascending: false });
-        if (error) throw error;
-        return data || [];
+        if (error) throw error; return data || [];
     },
+
     async procesarIngreso(nombre, seccion, anaquel, cantidad, unidad, lote, vencimiento, codigoBarras, comentarios) {
         try {
             const bodega = window.currentBodega || 'BODEGA'; const nombreUpper = nombre.toUpperCase(); const loteUpper = lote ? lote.toUpperCase() : '';
@@ -114,15 +120,24 @@ const DB = {
             return { itemId, stockNuevo: sn };
         } catch (e) { console.error('Error procesarIngreso:', e); throw e; }
     },
+
     async procesarSalida(itemId, cantidad, comentarios) {
         try {
             const item = await this.getInventarioItem(itemId);
             if (!item) throw new Error('INSUMO NO ENCONTRADO');
-            if (cantidad > item.stock) throw new Error('STOCK INSUFICIENTE'); if (cantidad <= 0) throw new Error('CANTIDAD INVÁLIDA');
+            if (cantidad > item.stock) throw new Error('STOCK INSUFICIENTE');
+            if (cantidad <= 0) throw new Error('CANTIDAD INVÁLIDA');
             const sa = item.stock, sn = sa - cantidad;
+            
+            if (sn === 0) {
+                await this.addMovimiento({ tipo: 'SALIDA', insumo: item.nombre, cantidad, stock_anterior: sa, stock_nuevo: 0, anaquel: item.anaquel, comentarios: (comentarios ? comentarios.toUpperCase() + ' | ' : '') + 'STOCK AGOTADO - ELIMINADO AUTOMÁTICAMENTE' });
+                await this.deleteInventarioItem(itemId);
+                return { stockNuevo: 0, nombre: item.nombre, anaquel: item.anaquel, eliminado: true };
+            }
+            
             await this.updateInventarioItem(itemId, { stock: sn });
             await this.addMovimiento({ tipo: 'SALIDA', insumo: item.nombre, cantidad, stock_anterior: sa, stock_nuevo: sn, anaquel: item.anaquel, comentarios: comentarios ? comentarios.toUpperCase() : null });
-            return { stockNuevo: sn, nombre: item.nombre, anaquel: item.anaquel };
+            return { stockNuevo: sn, nombre: item.nombre, anaquel: item.anaquel, eliminado: false };
         } catch (e) { console.error('Error procesarSalida:', e); throw e; }
     }
 };
