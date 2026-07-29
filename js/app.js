@@ -33,99 +33,9 @@ const App = {
         const fu = document.getElementById('filtro-usuario-movimiento'); if (fu) fu.addEventListener('change', () => this.renderMovimientos());
         const bm = document.getElementById('busqueda-movimientos'); if (bm) bm.addEventListener('input', () => this.renderMovimientos());
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') UI.closeModal(); });
-        this.configurarEscaneoPistola();
-    },
-
-    configurarEscaneoPistola() {
-        let buffer = '';
-        let timer = null;
-        document.addEventListener('keydown', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-            if (e.key === 'Enter' && buffer.length > 5) {
-                const codigo = buffer.trim();
-                buffer = '';
-                if (timer) clearTimeout(timer);
-                this.procesarCodigoBarras(codigo);
-                return;
-            }
-            if (e.key.length === 1) {
-                buffer += e.key;
-                if (timer) clearTimeout(timer);
-                timer = setTimeout(() => { buffer = ''; }, 100);
-            }
-        });
-    },
-
-    async procesarCodigoBarras(codigo) {
-        try {
-            const resultados = await DB.buscarPorCodigoBarras(codigo);
-            if (resultados.length === 0) {
-                UI.showToast('CÓDIGO NO ENCONTRADO: ' + codigo, 'warning');
-                return;
-            }
-            if (resultados.length === 1) {
-                const item = resultados[0];
-                const modalActual = document.getElementById('modal').classList.contains('active');
-                if (modalActual && document.getElementById('sal-busqueda')) {
-                    document.getElementById('sal-busqueda').value = item.nombre;
-                    this.buscarInsumoSalida();
-                    UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
-                } else if (modalActual && document.getElementById('ing-nombre')) {
-                    document.getElementById('ing-nombre').value = item.nombre;
-                    if (item.unidad) {
-                        const s = document.getElementById('ing-unidad');
-                        for (let i = 0; i < s.options.length; i++) { if (s.options[i].value === item.unidad) { s.selectedIndex = i; break; } }
-                    }
-                    UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
-                } else {
-                    UI.showToast('INSUMO: ' + item.nombre + ' | STOCK: ' + item.stock + ' | ANAQUEL: ' + item.anaquel, 'success');
-                }
-            } else {
-                UI.showToast('MÚLTIPLES COINCIDENCIAS. USE LA BÚSQUEDA MANUAL.', 'warning');
-            }
-        } catch (e) { UI.showToast('ERROR AL BUSCAR CÓDIGO', 'error'); }
-    },
-
-    abrirEscanerMovil(tipo) {
-        const html5QrCode = new Html5Qrcode("reader");
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-        const modalContent = document.getElementById('modal-content');
-        modalContent.innerHTML = `<h2>ESCANEAR CÓDIGO DE BARRAS</h2><div id="reader" style="width:100%;max-width:400px;margin:0 auto;"></div><div class="form-actions"><button class="btn btn-secondary" onclick="App.detenerEscaner()">CANCELAR</button></div>`;
-        document.getElementById('modal').classList.add('active');
-        html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
-            html5QrCode.stop().then(() => { document.getElementById('modal').classList.remove('active'); this.procesarCodigoBarrasMovil(decodedText, tipo); }).catch(e => console.error(e));
-        }, (errorMessage) => {});
-        window.html5QrCode = html5QrCode;
-    },
-
-    detenerEscaner() {
-        if (window.html5QrCode) { window.html5QrCode.stop().then(() => { document.getElementById('modal').classList.remove('active'); }).catch(e => console.error(e)); }
-        else { document.getElementById('modal').classList.remove('active'); }
-    },
-
-    async procesarCodigoBarrasMovil(codigo, tipo) {
-        try {
-            const resultados = await DB.buscarPorCodigoBarras(codigo);
-            if (resultados.length === 0) { UI.showToast('CÓDIGO NO ENCONTRADO', 'warning'); return; }
-            if (resultados.length === 1) {
-                const item = resultados[0];
-                if (tipo === 'ingreso') {
-                    this.showIngresoModal();
-                    setTimeout(() => {
-                        document.getElementById('ing-nombre').value = item.nombre;
-                        if (item.unidad) { const s = document.getElementById('ing-unidad'); for (let i = 0; i < s.options.length; i++) { if (s.options[i].value === item.unidad) { s.selectedIndex = i; break; } } }
-                    }, 300);
-                } else if (tipo === 'salida') {
-                    this.showSalidaModal();
-                    setTimeout(() => { document.getElementById('sal-busqueda').value = item.nombre; this.buscarInsumoSalida(); }, 300);
-                }
-                UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
-            } else { UI.showToast('MÚLTIPLES COINCIDENCIAS', 'warning'); }
-        } catch (e) { UI.showToast('ERROR', 'error'); }
     },
 
     async showDashboard() { UI.setActiveSection('dashboard'); await this.loadAllData(); this.renderDashboard(); },
-
     renderDashboard() {
         const { inventario, secciones, config } = this.state;
         document.getElementById('total-insumos').textContent = inventario.length;
@@ -135,9 +45,9 @@ const App = {
         const criticos = inventario.filter(i => this.esStockCritico(i));
         document.getElementById('stock-critico').textContent = criticos.length;
         const hoy = new Date(); const lim = new Date(hoy); lim.setDate(lim.getDate() + (config.dias_vencimiento || 30));
-        const vencidosCount = inventario.filter(i => { if (!i.vencimiento) return false; return new Date(i.vencimiento + 'T00:00:00') < hoy; }).length;
-        const porVencerCount = inventario.filter(i => { if (!i.vencimiento) return false; const v = new Date(i.vencimiento + 'T00:00:00'); return v >= hoy && v <= lim; }).length;
-        document.getElementById('vencimientos-proximos').textContent = vencidosCount + porVencerCount;
+        const vc = inventario.filter(i => { if (!i.vencimiento) return false; return new Date(i.vencimiento + 'T00:00:00') < hoy; }).length;
+        const pv = inventario.filter(i => { if (!i.vencimiento) return false; const v = new Date(i.vencimiento + 'T00:00:00'); return v >= hoy && v <= lim; }).length;
+        document.getElementById('vencimientos-proximos').textContent = vc + pv;
         this.renderAlertas(criticos);
     },
 
@@ -145,31 +55,27 @@ const App = {
         if (!item.stock || item.stock === 0) return true;
         const movs = this.state.movimientos.filter(m => m.insumo && item.nombre && m.insumo.toLowerCase() === item.nombre.toLowerCase() && m.anaquel === item.anaquel);
         if (movs.length === 0) return false;
-        const haySalidas = movs.some(m => m.tipo === 'SALIDA');
-        if (!haySalidas) return false;
-        const maximos = movs.map(m => m.stock_nuevo || 0);
-        const stockMax = Math.max(...maximos, item.stock);
-        if (stockMax === 0) return false;
-        return (item.stock / stockMax) * 100 <= this.state.config.porcentaje_critico;
+        if (!movs.some(m => m.tipo === 'SALIDA')) return false;
+        const maxs = movs.map(m => m.stock_nuevo || 0); const sm = Math.max(...maxs, item.stock);
+        if (sm === 0) return false;
+        return (item.stock / sm) * 100 <= this.state.config.porcentaje_critico;
     },
 
     renderAlertas(criticos) {
-        const c = document.getElementById('alertas-stock');
-        const { inventario, config } = this.state;
+        const c = document.getElementById('alertas-stock'); const { inventario, config } = this.state;
         const hoy = new Date(); const lim = new Date(hoy); lim.setDate(lim.getDate() + (config.dias_vencimiento || 30));
         const porVencer = inventario.filter(i => { if (!i.vencimiento) return false; const v = new Date(i.vencimiento + 'T00:00:00'); return v >= hoy && v <= lim && !this.esStockCritico(i); });
-        const vencidos = inventario.filter(i => { if (!i.vencimiento) return false; const v = new Date(i.vencimiento + 'T00:00:00'); return v < hoy && !this.esStockCritico(i); });
-        const criticosIds = new Set(criticos.map(i => i.id));
-        const porVencerFiltrados = porVencer.filter(i => !criticosIds.has(i.id));
-        const vencidosFiltrados = vencidos.filter(i => !criticosIds.has(i.id));
-        const totalAlertas = criticos.length + porVencerFiltrados.length + vencidosFiltrados.length;
-        if (totalAlertas === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.check}</div><p>NO HAY ALERTAS.</p></div>`; return; }
+        const vencidos = inventario.filter(i => { if (!i.vencimiento) return false; return new Date(i.vencimiento + 'T00:00:00') < hoy && !this.esStockCritico(i); });
+        const cIds = new Set(criticos.map(i => i.id));
+        const pvf = porVencer.filter(i => !cIds.has(i.id)); const vf = vencidos.filter(i => !cIds.has(i.id));
+        const total = criticos.length + pvf.length + vf.length;
+        if (total === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.check}</div><p>NO HAY ALERTAS.</p></div>`; return; }
         let h = '<div class="table-container"><table><thead><tr><th>INSUMO</th><th class="text-center">STOCK</th><th class="text-center">ANAQUEL</th><th class="text-center">VENC.</th><th class="text-center">ALERTA</th></tr></thead><tbody>';
         criticos.forEach(item => { const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let ta = ''; if (venc) ta = '<span class="badge badge-danger">VENCIDO</span> <span class="badge badge-danger">STOCK CRÍTICO</span>'; else if (vp) ta = '<span class="badge badge-danger">STOCK CRÍTICO</span> <span class="badge badge-warning">POR VENCER</span>'; else ta = '<span class="badge badge-danger">STOCK CRÍTICO</span>'; h += `<tr class="stock-critical"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'}</td><td class="text-center">${ta}</td></tr>`; });
-        vencidosFiltrados.forEach(item => { h += `<tr class="stock-critical"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'}</td><td class="text-center"><span class="badge badge-danger">VENCIDO</span></td></tr>`; });
-        porVencerFiltrados.forEach(item => { const dr = Math.ceil((new Date(item.vencimiento + 'T00:00:00') - hoy) / 86400000); h += `<tr class="stock-warning"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'} <small style="color:#856404;">(${dr} DÍAS)</small></td><td class="text-center"><span class="badge badge-warning">POR VENCER</span></td></tr>`; });
+        vf.forEach(item => { h += `<tr class="stock-critical"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'}</td><td class="text-center"><span class="badge badge-danger">VENCIDO</span></td></tr>`; });
+        pvf.forEach(item => { const dr = Math.ceil((new Date(item.vencimiento + 'T00:00:00') - hoy) / 86400000); h += `<tr class="stock-warning"><td><strong>${item.nombre}</strong></td><td class="text-center">${item.stock} ${item.unidad||''}</td><td class="text-center">${item.anaquel}</td><td class="text-center">${item.vencimiento||'N/A'} <small>(${dr} DÍAS)</small></td><td class="text-center"><span class="badge badge-warning">POR VENCER</span></td></tr>`; });
         h += '</tbody></table></div>'; c.innerHTML = h;
-        if (totalAlertas > 10) { c.innerHTML += `<p style="margin-top:10px;font-size:11px;color:#888;text-align:center;">MOSTRANDO LAS PRIMERAS 10 DE ${totalAlertas} ALERTAS. <a href="#" onclick="App.showInventario();return false;" style="color:var(--primary);">VER TODAS EN INVENTARIO →</a></p>`; }
+        if (total > 10) { c.innerHTML += `<p style="margin-top:10px;font-size:11px;color:#888;text-align:center;">MOSTRANDO LAS PRIMERAS 10 DE ${total} ALERTAS. <a href="#" onclick="App.showInventario();return false;" style="color:var(--primary);">VER TODAS →</a></p>`; }
     },
 
     async showInventario() { UI.setActiveSection('inventario'); await this.loadAllData(); this.renderInventario(); },
@@ -181,10 +87,10 @@ const App = {
         if (ninguno) { filtrados = items; } else { items.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let inc = false; if (sc && ec && !venc) inc = true; if (pv && vp && !ec) inc = true; if (vc && venc) inc = true; if (ec && venc && (sc || vc)) inc = true; if (inc) filtrados.push(item); }); }
         document.getElementById('contador-inventario').textContent = filtrados.length;
         const c = document.getElementById('tabla-inventario'); if (filtrados.length === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.box}</div><p>SIN RESULTADOS.</p></div>`; return; }
-        const esBotiquin = window.currentBodega === 'BOTIQUIN';
-        let th = esBotiquin ? '<th>NOMBRE</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">ACC.</th>' : '<th>NOMBRE</th><th class="text-center">ANAQUEL</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">ACC.</th>';
+        const esB = window.currentBodega === 'BOTIQUIN';
+        let th = esB ? '<th>NOMBRE</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">CB</th><th class="text-center">ACC.</th>' : '<th>NOMBRE</th><th class="text-center">ANAQUEL</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">CB</th><th class="text-center">ACC.</th>';
         let h = `<table><thead><tr>${th}</tr></thead><tbody>`;
-        filtrados.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let cl = ''; if (venc) cl = 'stock-critical'; else if (ec) cl = 'stock-critical'; else if (vp) cl = 'stock-warning'; h += `<tr class="${cl}"><td><strong>${item.nombre}</strong></td>${esBotiquin ? '' : `<td class="text-center">${item.anaquel}</td>`}<td class="text-center">${item.stock}</td><td class="text-center">${item.unidad||''}</td><td class="text-center">${item.lote||'-'}</td><td class="text-center">${item.vencimiento||'-'}${venc?' <span class="badge badge-danger">VENC</span>':''}${vp&&!ec?' <span class="badge badge-warning">PRONT</span>':''}</td><td class="text-center"><button class="btn btn-warning btn-sm" onclick="App.editarInsumo(${item.id})">${UI.icons.edit}</button><button class="btn btn-danger btn-sm" onclick="App.eliminarInsumo(${item.id})">${UI.icons.trash}</button></td></tr>`; });
+        filtrados.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let cl = ''; if (venc) cl = 'stock-critical'; else if (ec) cl = 'stock-critical'; else if (vp) cl = 'stock-warning'; h += `<tr class="${cl}"><td><strong>${item.nombre}</strong></td>${esB ? '' : `<td class="text-center">${item.anaquel}</td>`}<td class="text-center">${item.stock}</td><td class="text-center">${item.unidad||''}</td><td class="text-center">${item.lote||'-'}</td><td class="text-center">${item.vencimiento||'-'}${venc?' <span class="badge badge-danger">VENC</span>':''}${vp&&!ec?' <span class="badge badge-warning">PRONT</span>':''}</td><td class="text-center">${item.codigo_barras ? `<span class="badge badge-info">${item.codigo_barras}</span>` : '-'}</td><td class="text-center"><button class="btn btn-warning btn-sm" onclick="App.editarInsumo(${item.id})">${UI.icons.edit}</button><button class="btn btn-danger btn-sm" onclick="App.eliminarInsumo(${item.id})">${UI.icons.trash}</button></td></tr>`; });
         h += '</tbody></table>'; c.innerHTML = h;
     },
 
@@ -206,16 +112,86 @@ const App = {
         const esBotiquin = window.currentBodega === 'BOTIQUIN';
         const anaqueles = this.state.secciones.map(s => s.seccion + s.anaquel).sort();
         const unidades = this.state.unidades.map(u => u.nombre).sort();
+        const esMovil = window.innerWidth <= 768;
         const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="ing-anaquel"><option value="">SELECCIONE...</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select>${anaqueles.length===0?'<small style="color:#c0392b;">NO HAY ANAQUELES.</small>':''}</div>`;
-        UI.openModal(`<h2>NUEVO INGRESO</h2>
-            <div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div>
-            ${campoAnaquel}
-            <div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div>
-            <div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="ing-lote" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div>
-            <div class="form-group"><label>CÓDIGO DE BARRAS</label><div style="display:flex;gap:8px;"><input type="text" id="ing-codigo-barras" placeholder="CÓDIGO DE BARRAS" style="flex:1;"><button class="btn btn-info btn-sm" onclick="App.abrirEscanerMovil('ingreso')" title="ESCANEAR">📷</button></div></div>
-            <div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div>
-            <div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
+        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.escanearCodigoBarrasIngreso()" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
+        UI.openModal(`<h2>NUEVO INGRESO</h2>${botonEscaner}<div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="ing-codigo-barras" placeholder="ESCANEE O INGRESE EL CÓDIGO..." onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasIngreso();}"></div>${campoAnaquel}<div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="ing-lote" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
         setTimeout(() => { document.addEventListener('click', function cerrar(e) { const inp = document.getElementById('ing-nombre'); const sug = document.getElementById('sugerencias-ing'); if (inp && sug && e.target !== inp && !sug.contains(e.target)) sug.style.display = 'none'; }); }, 100);
+    },
+
+    showSalidaModal() {
+        const anaqueles = this.state.secciones.map(s => s.seccion + s.anaquel).sort();
+        const esBotiquin = window.currentBodega === 'BOTIQUIN';
+        const esMovil = window.innerWidth <= 768;
+        const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>FILTRAR POR ANAQUEL</label><select id="sal-anaquel-filtro" onchange="App.filtrarPorAnaquelSalida()"><option value="">TODOS</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select></div>`;
+        const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.escanearCodigoBarrasSalida()" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
+        UI.openModal(`<h2>NUEVA SALIDA</h2>${botonEscaner}${campoAnaquel}<div class="form-group" style="position:relative;"><label>BUSCAR POR NOMBRE</label><input type="text" id="sal-busqueda" placeholder="ESCRIBA EL NOMBRE..." autocomplete="off" onkeyup="App.buscarCoincidenciasSalida()" onfocus="App.buscarCoincidenciasSalida()" style="text-transform:uppercase;"><div id="sugerencias-sal" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;"></div></div><div id="resultados-busqueda"><p style="color:#666;padding:15px;">BUSQUE UN INSUMO PARA RETIRAR.</p></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
+    },
+
+    escanearCodigoBarrasIngreso() {
+        if (!('BarcodeDetector' in window)) {
+            const codigo = prompt('INGRESE EL CÓDIGO DE BARRAS MANUALMENTE:');
+            if (codigo) { document.getElementById('ing-codigo-barras').value = codigo.trim().toUpperCase(); this.buscarPorCodigoBarrasIngreso(); }
+            return;
+        }
+        const scanner = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e'] });
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+            const video = document.createElement('video'); video.srcObject = stream; video.play();
+            const scan = () => { scanner.detect(video).then(codes => { if (codes.length > 0) { document.getElementById('ing-codigo-barras').value = codes[0].rawValue; stream.getTracks().forEach(t => t.stop()); video.remove(); this.buscarPorCodigoBarrasIngreso(); } else { requestAnimationFrame(scan); } }).catch(() => requestAnimationFrame(scan)); };
+            UI.openModal(`<div style="text-align:center;"><h3>ESCANEANDO...</h3><video id="video-scanner" style="width:100%;max-width:300px;border-radius:10px;"></video><p style="margin-top:10px;">APUNTE AL CÓDIGO DE BARRAS</p><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
+            setTimeout(() => { const v = document.getElementById('video-scanner'); if (v) { v.srcObject = stream; v.play(); } scan(); }, 500);
+        }).catch(() => { const codigo = prompt('INGRESE EL CÓDIGO DE BARRAS:'); if (codigo) { document.getElementById('ing-codigo-barras').value = codigo.trim().toUpperCase(); this.buscarPorCodigoBarrasIngreso(); } });
+    },
+
+    escanearCodigoBarrasSalida() {
+        if (!('BarcodeDetector' in window)) {
+            const codigo = prompt('INGRESE EL CÓDIGO DE BARRAS MANUALMENTE:');
+            if (codigo) this.buscarPorCodigoBarrasSalida(codigo.trim().toUpperCase());
+            return;
+        }
+        const scanner = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e'] });
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+            const video = document.createElement('video'); video.srcObject = stream; video.play();
+            const scan = () => { scanner.detect(video).then(codes => { if (codes.length > 0) { const codigo = codes[0].rawValue; stream.getTracks().forEach(t => t.stop()); video.remove(); this.buscarPorCodigoBarrasSalida(codigo); } else { requestAnimationFrame(scan); } }).catch(() => requestAnimationFrame(scan)); };
+            UI.openModal(`<div style="text-align:center;"><h3>ESCANEANDO...</h3><video id="video-scanner" style="width:100%;max-width:300px;border-radius:10px;"></video><p style="margin-top:10px;">APUNTE AL CÓDIGO DE BARRAS</p><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
+            setTimeout(() => { const v = document.getElementById('video-scanner'); if (v) { v.srcObject = stream; v.play(); } scan(); }, 500);
+        }).catch(() => { const codigo = prompt('INGRESE EL CÓDIGO DE BARRAS:'); if (codigo) this.buscarPorCodigoBarrasSalida(codigo.trim().toUpperCase()); });
+    },
+
+    async buscarPorCodigoBarrasIngreso() {
+        const codigo = document.getElementById('ing-codigo-barras').value.trim().toUpperCase();
+        if (!codigo) return;
+        try {
+            const resultados = await DB.buscarPorCodigoBarras(codigo);
+            if (resultados.length > 0) {
+                const item = resultados[0];
+                document.getElementById('ing-nombre').value = item.nombre;
+                document.getElementById('ing-unidad').value = item.unidad || '';
+                if (document.getElementById('ing-anaquel')) document.getElementById('ing-anaquel').value = item.anaquel;
+                document.getElementById('ing-lote').value = item.lote || '';
+                document.getElementById('ing-vencimiento').value = item.vencimiento || '';
+                UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
+            } else {
+                UI.showToast('CÓDIGO NUEVO. COMPLETE LOS DATOS.', 'warning');
+            }
+        } catch (e) { UI.showToast('ERROR AL BUSCAR CÓDIGO', 'error'); }
+    },
+
+    async buscarPorCodigoBarrasSalida(codigo) {
+        if (!codigo) return;
+        try {
+            const resultados = await DB.buscarPorCodigoBarras(codigo);
+            UI.closeModal();
+            if (resultados.length > 0) {
+                const itemsConStock = resultados.filter(i => i.stock > 0);
+                if (itemsConStock.length === 0) { UI.showToast('SIN STOCK DISPONIBLE', 'warning'); return; }
+                if (itemsConStock.length === 1) { this.prepararSalida(itemsConStock[0].id); return; }
+                let h = '<div style="max-height:400px;overflow-y:auto;">';
+                itemsConStock.forEach(i => { h += `<div style="border:1px solid #ddd;padding:12px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;"><div><strong>${i.nombre}</strong><br><small>STOCK: ${i.stock} ${i.unidad||''} | ${i.anaquel}${i.lote?` | LOTE: ${i.lote}`:''}${i.vencimiento?` | VENC: ${i.vencimiento}`:''}</small></div><button class="btn btn-danger btn-sm" onclick="App.prepararSalida(${i.id})">RETIRAR</button></div>`; });
+                h += '</div>';
+                UI.openModal(`<h2>SELECCIONE LOTE</h2>${h}<div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
+            } else { UI.showToast('CÓDIGO NO ENCONTRADO', 'warning'); }
+        } catch (e) { UI.showToast('ERROR AL BUSCAR', 'error'); }
     },
 
     async buscarCoincidencias(tipo) {
@@ -244,35 +220,23 @@ const App = {
         const unidad = document.getElementById('ing-unidad').value;
         const lote = document.getElementById('ing-lote').value.trim().toUpperCase();
         const vencimiento = document.getElementById('ing-vencimiento').value;
-        const codigoBarras = document.getElementById('ing-codigo-barras')?.value.trim() || null;
+        const codigoBarras = document.getElementById('ing-codigo-barras').value.trim().toUpperCase();
         const comentarios = document.getElementById('ing-comentarios').value.trim().toUpperCase();
         if (!nombre || (!esBotiquin && !anaquel) || !cantidad || cantidad <= 0) { UI.showToast('COMPLETE LOS CAMPOS (*)', 'error'); return; }
         const seccion = esBotiquin ? 'B' : anaquel.charAt(0);
-        try { await DB.procesarIngreso(nombre, seccion, anaquel, cantidad, unidad, lote, vencimiento, comentarios, codigoBarras); UI.closeModal(); UI.showToast('INGRESO REGISTRADO', 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); }
-    },
-
-    showSalidaModal() {
-        const anaqueles = this.state.secciones.map(s => s.seccion + s.anaquel).sort();
-        const esBotiquin = window.currentBodega === 'BOTIQUIN';
-        const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>FILTRAR POR ANAQUEL</label><select id="sal-anaquel-filtro" onchange="App.filtrarPorAnaquelSalida()"><option value="">TODOS</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select></div>`;
-        UI.openModal(`<h2>NUEVA SALIDA</h2>${campoAnaquel}
-            <div class="form-group"><button class="btn btn-info btn-sm" onclick="App.abrirEscanerMovil('salida')">📷 ESCANEAR CÓDIGO DE BARRAS</button></div>
-            <div class="form-group" style="position:relative;"><label>BUSCAR POR NOMBRE</label><input type="text" id="sal-busqueda" placeholder="ESCRIBA EL NOMBRE..." autocomplete="off" onkeyup="App.buscarCoincidenciasSalida()" onfocus="App.buscarCoincidenciasSalida()" style="text-transform:uppercase;"><div id="sugerencias-sal" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;"></div></div>
-            <div id="resultados-busqueda"><p style="color:#666;padding:15px;">BUSQUE UN INSUMO O ESCANEE UN CÓDIGO DE BARRAS.</p></div>
-            <div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button></div>`);
+        try { await DB.procesarIngreso(nombre, seccion, anaquel, cantidad, unidad, lote, vencimiento, codigoBarras || null, comentarios); UI.closeModal(); UI.showToast('INGRESO REGISTRADO', 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); }
     },
 
     buscarCoincidenciasSalida() {
-        const anaquelFiltro = document.getElementById('sal-anaquel-filtro')?.value;
-        const input = document.getElementById('sal-busqueda'); const sugerencias = document.getElementById('sugerencias-sal');
-        if (!input || !sugerencias) return;
-        const busqueda = input.value.trim().toLowerCase(); if (busqueda.length < 1) { sugerencias.style.display = 'none'; this.buscarInsumoSalida(); return; }
-        let resultados = this.state.inventario.filter(item => item.stock > 0 && item.nombre.toLowerCase().includes(busqueda));
-        if (anaquelFiltro) resultados = resultados.filter(item => item.anaquel === anaquelFiltro);
-        if (resultados.length === 0) { sugerencias.style.display = 'none'; return; }
-        let html = '';
-        resultados.slice(0, 10).forEach(item => { html += `<div onclick="App.seleccionarSugerenciaSalida('${item.nombre.replace(/'/g, "\\'")}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #eee; font-size:13px;" onmouseover="this.style.background='#eef2f7'" onmouseout="this.style.background='white'"><strong>${item.nombre}</strong><span style="color:#888; font-size:11px;">STOCK: ${item.stock} | ${item.anaquel}${item.lote ? ` | LOTE: ${item.lote}` : ''}${item.vencimiento ? ` | VENC: ${item.vencimiento}` : ''}</span></div>`; });
-        sugerencias.innerHTML = html; sugerencias.style.display = 'block';
+        const af = document.getElementById('sal-anaquel-filtro')?.value;
+        const input = document.getElementById('sal-busqueda'); const sug = document.getElementById('sugerencias-sal');
+        if (!input || !sug) return;
+        const b = input.value.trim().toLowerCase(); if (b.length < 1) { sug.style.display = 'none'; this.buscarInsumoSalida(); return; }
+        let r = this.state.inventario.filter(i => i.stock > 0 && i.nombre.toLowerCase().includes(b));
+        if (af) r = r.filter(i => i.anaquel === af);
+        if (r.length === 0) { sug.style.display = 'none'; return; }
+        let h = ''; r.slice(0, 10).forEach(i => { h += `<div onclick="App.seleccionarSugerenciaSalida('${i.nombre.replace(/'/g, "\\'")}')" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;font-size:13px;" onmouseover="this.style.background='#eef2f7'" onmouseout="this.style.background='white'"><strong>${i.nombre}</strong><span style="color:#888;font-size:11px;">STOCK: ${i.stock} | ${i.anaquel}${i.lote?` | LOTE: ${i.lote}`:''}${i.vencimiento?` | VENC: ${i.vencimiento}`:''}${i.codigo_barras?` | CB: ${i.codigo_barras}`:''}</span></div>`; });
+        sug.innerHTML = h; sug.style.display = 'block';
     },
     seleccionarSugerenciaSalida(nombre) { document.getElementById('sal-busqueda').value = nombre; document.getElementById('sugerencias-sal').style.display = 'none'; this.buscarInsumoSalida(); },
 
@@ -281,12 +245,11 @@ const App = {
         let r = this.state.inventario.filter(i => i.stock > 0); if (af) r = r.filter(i => i.anaquel === af); if (b) r = r.filter(i => i.nombre.toLowerCase().includes(b));
         const c = document.getElementById('resultados-busqueda'); if (r.length === 0) { c.innerHTML = '<p style="padding:15px;">NO SE ENCONTRARON INSUMOS.</p>'; return; }
         let h = '<div style="max-height:400px;overflow-y:auto;">';
-        r.forEach(i => { h += `<div style="border:1px solid #ddd;padding:12px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;"><div><strong>${i.nombre}</strong><br><small>STOCK: ${i.stock} ${i.unidad||''} | ANAQUEL: ${i.anaquel}${i.lote ? ` | LOTE: <span class="badge badge-info">${i.lote}</span>` : ''}${i.vencimiento ? ` | VENC: ${i.vencimiento}` : ''}</small></div><button class="btn btn-danger btn-sm" onclick="App.prepararSalida(${i.id})">RETIRAR</button></div>`; });
+        r.forEach(i => { h += `<div style="border:1px solid #ddd;padding:12px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;"><div><strong>${i.nombre}</strong><br><small>STOCK: ${i.stock} ${i.unidad||''} | ANAQUEL: ${i.anaquel}${i.lote?` | LOTE: <span class="badge badge-info">${i.lote}</span>`:''}${i.vencimiento?` | VENC: ${i.vencimiento}`:''}${i.codigo_barras?` | CB: ${i.codigo_barras}`:''}</small></div><button class="btn btn-danger btn-sm" onclick="App.prepararSalida(${i.id})">RETIRAR</button></div>`; });
         h += '</div>'; c.innerHTML = h;
     },
 
-    prepararSalida(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; UI.openModal(`<h2>RETIRAR INSUMO</h2><div style="background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:15px;"><p><strong>INSUMO:</strong> ${i.nombre}</p><p><strong>ANAQUEL:</strong> ${i.anaquel}</p><p><strong>STOCK:</strong> ${i.stock} ${i.unidad||'UNIDADES'}</p>${i.lote?`<p><strong>LOTE:</strong> ${i.lote}</p>`:''}${i.vencimiento?`<p><strong>VENCIMIENTO:</strong> ${i.vencimiento}</p>`:''}${i.codigo_barras?`<p><strong>CÓD. BARRAS:</strong> ${i.codigo_barras}</p>`:''}</div><div class="form-group"><label>CANTIDAD *</label><input type="number" id="sal-cantidad" value="1" min="1" max="${i.stock}" autofocus></div><div class="form-group"><label>MOTIVO</label><textarea id="sal-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="App.showSalidaModal()">VOLVER</button><button class="btn btn-danger" onclick="App.procesarSalida(${id})">${UI.icons.minus} CONFIRMAR</button></div>`); },
-
+    prepararSalida(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; UI.openModal(`<h2>RETIRAR INSUMO</h2><div style="background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:15px;"><p><strong>INSUMO:</strong> ${i.nombre}</p><p><strong>ANAQUEL:</strong> ${i.anaquel}</p><p><strong>STOCK:</strong> ${i.stock} ${i.unidad||'UNIDADES'}</p>${i.lote?`<p><strong>LOTE:</strong> ${i.lote}</p>`:''}${i.vencimiento?`<p><strong>VENCIMIENTO:</strong> ${i.vencimiento}</p>`:''}${i.codigo_barras?`<p><strong>CB:</strong> ${i.codigo_barras}</p>`:''}</div><div class="form-group"><label>CANTIDAD *</label><input type="number" id="sal-cantidad" value="1" min="1" max="${i.stock}" autofocus></div><div class="form-group"><label>MOTIVO</label><textarea id="sal-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="App.showSalidaModal()">VOLVER</button><button class="btn btn-danger" onclick="App.procesarSalida(${id})">${UI.icons.minus} CONFIRMAR</button></div>`); },
     async procesarSalida(id) { const c = parseInt(document.getElementById('sal-cantidad').value); const co = document.getElementById('sal-comentarios').value.trim().toUpperCase(); if (!c || c <= 0) { UI.showToast('CANTIDAD INVÁLIDA', 'error'); return; } try { const r = await DB.procesarSalida(id, c, co); UI.closeModal(); UI.showToast('SALIDA REGISTRADA' + (r.stockNuevo <= 5 ? ' - STOCK BAJO' : ''), r.stockNuevo <= 5 ? 'warning' : 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); } },
 
     showBusquedaAnaquelModal() { if (window.currentBodega === 'BOTIQUIN') return; UI.openModal(`<h2>BUSCAR ANAQUEL</h2><div class="form-group"><label>ANAQUEL</label><select id="bus-anaquel" onchange="App.buscarAnaquel()"><option value="">SELECCIONE...</option>${this.state.secciones.map(s => s.seccion+s.anaquel).sort().map(a => `<option value="${a}">${a}</option>`).join('')}</select></div><div id="resultado-anaquel"></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button></div>`); },
@@ -309,8 +272,8 @@ const App = {
     async crearNuevaSeccion() { const l = document.getElementById('nueva-seccion-letra').value.trim().toUpperCase(); const d = document.getElementById('nueva-seccion-descripcion').value.trim().toUpperCase(); const c = parseInt(document.getElementById('nueva-seccion-cantidad').value) || 1; if (!l || !d) { UI.showToast('COMPLETE LOS CAMPOS', 'error'); return; } try { for (let i = 1; i <= c; i++) await DB.addSeccion(l, d, String(i)); await DB.addMovimiento({ tipo: 'CREACION_SECCION', insumo: `SECCIÓN ${l}`, cantidad: c }); await this.loadAllData(); this.mostrarContenidoSecciones(); this.renderDashboard(); UI.showToast('SECCIÓN CREADA', 'success'); } catch (e) { UI.showToast('ERROR', 'error'); } },
     async eliminarSeccionCompleta(sec) { if (!confirm('¿ELIMINAR SECCIÓN ' + sec + '?')) return; const items = this.state.secciones.filter(s => s.seccion === sec); try { await DB.addMovimiento({ tipo: 'ELIMINACION_SECCION', insumo: `SECCIÓN ${sec}`, cantidad: items.length }); for (const item of items) await DB.deleteSeccion(item.id); await this.loadAllData(); this.mostrarContenidoSecciones(); UI.showToast('SECCIÓN ELIMINADA', 'success'); } catch (e) { UI.showToast('ERROR', 'error'); } },
 
-    editarInsumo(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; const esB = window.currentBodega === 'BOTIQUIN'; const anaq = this.state.secciones.map(s => s.seccion+s.anaquel).sort(); const und = this.state.unidades.map(u => u.nombre).sort(); const campoA = esB ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="edit-anaquel">${anaq.map(a => `<option value="${a}" ${a===i.anaquel?'selected':''}>${a}</option>`).join('')}</select></div>`; UI.openModal(`<h2>EDITAR #${i.id}</h2><div class="form-group"><label>NOMBRE *</label><input type="text" id="edit-nombre" value="${i.nombre||''}" style="text-transform:uppercase;"></div>${campoA}<div class="form-row"><div class="form-group"><label>STOCK</label><input type="number" id="edit-stock" value="${i.stock}" min="0"></div><div class="form-group"><label>UNIDAD</label><select id="edit-unidad"><option value="">SELECCIONE...</option>${und.map(u => `<option value="${u}" ${u===i.unidad?'selected':''}>${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="edit-lote" value="${i.lote||''}" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="edit-vencimiento" value="${i.vencimiento||''}"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="edit-codigo-barras" value="${i.codigo_barras||''}"></div><div class="form-group"><label>COMENTARIOS</label><textarea id="edit-comentarios" style="text-transform:uppercase;">${i.comentarios||''}</textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarEdicion(${id})">${UI.icons.edit} GUARDAR</button></div>`); },
-    async procesarEdicion(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; const esB = window.currentBodega === 'BOTIQUIN'; const an = esB ? i.anaquel : document.getElementById('edit-anaquel').value; const ns = parseInt(document.getElementById('edit-stock').value); const up = { nombre: document.getElementById('edit-nombre').value.trim().toUpperCase(), seccion: esB ? 'B' : an.charAt(0), anaquel: an, stock: ns, unidad: document.getElementById('edit-unidad').value, lote: document.getElementById('edit-lote').value.trim().toUpperCase(), vencimiento: document.getElementById('edit-vencimiento').value || null, codigo_barras: document.getElementById('edit-codigo-barras')?.value.trim() || null, comentarios: document.getElementById('edit-comentarios').value.trim().toUpperCase() }; if (!up.nombre || isNaN(ns) || ns < 0) { UI.showToast('COMPLETE LOS CAMPOS', 'error'); return; } try { await DB.updateInventarioItem(id, up); await DB.addMovimiento({ tipo: 'EDICION', insumo: up.nombre, cantidad: ns !== i.stock ? Math.abs(ns - i.stock) : 0, stock_anterior: i.stock, stock_nuevo: ns, anaquel: an }); UI.closeModal(); UI.showToast('INSUMO ACTUALIZADO', 'success'); await this.loadAllData(); this.renderDashboard(); this.renderInventario(); } catch (e) { UI.showToast('ERROR', 'error'); } },
+    editarInsumo(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; const esB = window.currentBodega === 'BOTIQUIN'; const anaq = this.state.secciones.map(s => s.seccion+s.anaquel).sort(); const und = this.state.unidades.map(u => u.nombre).sort(); const campoA = esB ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="edit-anaquel">${anaq.map(a => `<option value="${a}" ${a===i.anaquel?'selected':''}>${a}</option>`).join('')}</select></div>`; UI.openModal(`<h2>EDITAR #${i.id}</h2><div class="form-group"><label>NOMBRE *</label><input type="text" id="edit-nombre" value="${i.nombre||''}" style="text-transform:uppercase;"></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="edit-codigo-barras" value="${i.codigo_barras||''}"></div>${campoA}<div class="form-row"><div class="form-group"><label>STOCK</label><input type="number" id="edit-stock" value="${i.stock}" min="0"></div><div class="form-group"><label>UNIDAD</label><select id="edit-unidad"><option value="">SELECCIONE...</option>${und.map(u => `<option value="${u}" ${u===i.unidad?'selected':''}>${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="edit-lote" value="${i.lote||''}" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="edit-vencimiento" value="${i.vencimiento||''}"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="edit-comentarios" style="text-transform:uppercase;">${i.comentarios||''}</textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarEdicion(${id})">${UI.icons.edit} GUARDAR</button></div>`); },
+    async procesarEdicion(id) { const i = this.state.inventario.find(x => x.id === id); if (!i) return; const esB = window.currentBodega === 'BOTIQUIN'; const an = esB ? i.anaquel : document.getElementById('edit-anaquel').value; const ns = parseInt(document.getElementById('edit-stock').value); const up = { nombre: document.getElementById('edit-nombre').value.trim().toUpperCase(), seccion: esB ? 'B' : an.charAt(0), anaquel: an, stock: ns, codigo_barras: document.getElementById('edit-codigo-barras').value.trim().toUpperCase() || null, unidad: document.getElementById('edit-unidad').value, lote: document.getElementById('edit-lote').value.trim().toUpperCase(), vencimiento: document.getElementById('edit-vencimiento').value || null, comentarios: document.getElementById('edit-comentarios').value.trim().toUpperCase() }; if (!up.nombre || isNaN(ns) || ns < 0) { UI.showToast('COMPLETE LOS CAMPOS', 'error'); return; } try { await DB.updateInventarioItem(id, up); await DB.addMovimiento({ tipo: 'EDICION', insumo: up.nombre, cantidad: ns !== i.stock ? Math.abs(ns - i.stock) : 0, stock_anterior: i.stock, stock_nuevo: ns, anaquel: an }); UI.closeModal(); UI.showToast('INSUMO ACTUALIZADO', 'success'); await this.loadAllData(); this.renderDashboard(); this.renderInventario(); } catch (e) { UI.showToast('ERROR', 'error'); } },
     async eliminarInsumo(id) { const i = this.state.inventario.find(x => x.id === id); if (!i || !confirm('¿ELIMINAR?')) return; try { await DB.addMovimiento({ tipo: 'ELIMINACION', insumo: i.nombre, cantidad: 0, stock_anterior: i.stock }); await DB.deleteInventarioItem(id); UI.showToast('INSUMO ELIMINADO', 'success'); await this.loadAllData(); this.renderDashboard(); this.renderInventario(); } catch (e) { UI.showToast('ERROR', 'error'); } },
 
     async showGestionUsuariosModal() { if (!window.currentUser || window.currentUser.rol !== 'admin') return; const { data: u } = await supabaseClient.from('usuarios').select('*').order('created_at', { ascending: false }); let h = '<h2>GESTIONAR USUARIOS</h2>'; if (u && u.length > 0) { h += '<div class="table-container"><table><thead><tr><th>USUARIO</th><th>NOMBRE</th><th class="text-center">ROL</th><th class="text-center">ESTADO</th><th class="text-center">ACCIÓN</th></tr></thead><tbody>'; u.forEach(p => { h += `<tr><td><strong>${p.usuario}</strong></td><td>${p.nombre||'-'}</td><td class="text-center">${p.rol==='admin'?'<span class="badge badge-danger">ADMIN</span>':(p.rol==='usuario'?'<span class="badge badge-info">USUARIO</span>':'<span class="badge badge-warning">PENDIENTE</span>')}</td><td class="text-center">${p.activo?'<span class="badge badge-success">ACTIVO</span>':'<span class="badge badge-warning">PENDIENTE</span>'}</td><td class="text-center">${!p.activo?`<button class="btn btn-success btn-sm" onclick="App.activarUsuario(${p.id})">ACTIVAR</button>`:''}${p.rol!=='admin'&&p.activo?`<button class="btn btn-danger btn-sm" onclick="App.desactivarUsuario(${p.id})">DESACTIVAR</button>`:''}</td></tr>`; }); h += '</tbody></table></div>'; } UI.openModal(h + '<div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CERRAR</button></div>'); },
