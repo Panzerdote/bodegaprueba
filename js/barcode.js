@@ -1,6 +1,5 @@
 // js/barcode.js - Modulo de Generacion de Codigos de Barras
-// Dependencia: Biblioteca JsBarcode (CDN)
-// Agregar en el HTML: <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+// Dependencia: Biblioteca JsBarcode (CDN) y Supabase
 
 const BarcodeModule = (() => {
     // Configuracion privada
@@ -18,11 +17,40 @@ const BarcodeModule = (() => {
 
     /**
      * Inicializa el modulo de codigos de barras
-     * Agrega el boton en la interfaz principal
+     * Se llama cuando la vista de inventario esta activa
      */
     function init() {
-        _addBarcodeButton();
         _addBarcodeStyles();
+        _waitForInventoryView();
+    }
+
+    /**
+     * Espera a que la vista de inventario se renderice para agregar el boton
+     */
+    function _waitForInventoryView() {
+        const observer = new MutationObserver(() => {
+            const inventarioContainer = document.querySelector('#inventario-container, .inventario-view, [data-view="inventario"], #main-content');
+            const existingButton = document.getElementById('btn-open-barcode');
+            
+            if (inventarioContainer && !existingButton) {
+                _addBarcodeButton(inventarioContainer);
+            }
+        });
+
+        observer.observe(document.body, { 
+            childList: true, 
+            subtree: true,
+            attributes: true 
+        });
+
+        // Tambien verificar inmediatamente
+        setTimeout(() => {
+            const inventarioContainer = document.querySelector('#inventario-container, .inventario-view, [data-view="inventario"], #main-content');
+            const existingButton = document.getElementById('btn-open-barcode');
+            if (inventarioContainer && !existingButton) {
+                _addBarcodeButton(inventarioContainer);
+            }
+        }, 500);
     }
 
     /**
@@ -53,7 +81,7 @@ const BarcodeModule = (() => {
                 border-radius: 12px;
                 box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
                 width: 90%;
-                max-width: 800px;
+                max-width: 900px;
                 max-height: 85vh;
                 overflow-y: auto;
                 padding: 0;
@@ -165,7 +193,7 @@ const BarcodeModule = (() => {
                 background: linear-gradient(135deg, #c41e3a, #a01830);
                 color: white;
                 border: none;
-                padding: 10px 25px;
+                padding: 12px 25px;
                 border-radius: 6px;
                 cursor: pointer;
                 font-size: 0.95em;
@@ -184,7 +212,7 @@ const BarcodeModule = (() => {
                 background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
                 color: white;
                 border: none;
-                padding: 10px 25px;
+                padding: 12px 25px;
                 border-radius: 6px;
                 cursor: pointer;
                 font-size: 0.95em;
@@ -197,6 +225,39 @@ const BarcodeModule = (() => {
                 background: linear-gradient(135deg, #2c5aa0, #1a3a6b);
                 transform: translateY(-1px);
                 box-shadow: 0 4px 12px rgba(26, 58, 107, 0.3);
+            }
+
+            .btn-barcode-print:disabled,
+            .btn-barcode-generate:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+                transform: none;
+            }
+
+            .btn-barcode-action {
+                background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 0.9em;
+                font-weight: 500;
+                margin: 0 5px;
+                transition: all 0.3s ease;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .btn-barcode-action:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(26, 58, 107, 0.4);
+            }
+
+            .btn-barcode-action svg {
+                width: 16px;
+                height: 16px;
             }
 
             /* Contenedor de Resultados */
@@ -294,6 +355,27 @@ const BarcodeModule = (() => {
                 100% { transform: rotate(360deg); }
             }
 
+            /* Estados */
+            .barcode-error {
+                background: #fff3f3;
+                border: 1px solid #ffcccc;
+                color: #c41e3a;
+                padding: 15px;
+                border-radius: 6px;
+                text-align: center;
+                margin: 20px 0;
+            }
+
+            .barcode-info {
+                background: #f0f7ff;
+                border: 1px solid #cce5ff;
+                color: #1a3a6b;
+                padding: 15px;
+                border-radius: 6px;
+                text-align: center;
+                margin: 20px 0;
+            }
+
             /* Estilos de Impresion */
             @media print {
                 body * {
@@ -329,121 +411,84 @@ const BarcodeModule = (() => {
     }
 
     /**
-     * Agrega el boton de generacion de codigos de barras en la interfaz
+     * Agrega el boton de generacion de codigos de barras en la vista de inventario
      */
-    function _addBarcodeButton() {
-        // Intentar agregar el boton en diferentes ubicaciones posibles
-        const addButton = () => {
-            // Opcion 1: En el header o navbar
-            const headerActions = document.querySelector('.header-actions, .nav-actions, .user-menu');
-            if (headerActions && !document.getElementById('btn-open-barcode')) {
-                const button = document.createElement('button');
-                button.id = 'btn-open-barcode';
-                button.className = 'btn-barcode-action';
-                button.innerHTML = 'Generar Codigos de Barra';
-                button.title = 'Generar codigos de barras del inventario';
-                button.style.cssText = `
-                    background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
-                    color: white;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 0.9em;
-                    font-weight: 500;
-                    margin: 0 5px;
-                    transition: all 0.3s ease;
-                `;
-                button.addEventListener('mouseenter', () => {
-                    button.style.transform = 'translateY(-2px)';
-                    button.style.boxShadow = '0 4px 12px rgba(26, 58, 107, 0.4)';
-                });
-                button.addEventListener('mouseleave', () => {
-                    button.style.transform = 'translateY(0)';
-                    button.style.boxShadow = 'none';
-                });
-                button.addEventListener('click', openBarcodeModal);
-                headerActions.appendChild(button);
-                return true;
+    function _addBarcodeButton(container) {
+        const existingButton = document.getElementById('btn-open-barcode');
+        if (existingButton) return;
+
+        // Crear contenedor de acciones si no existe
+        let actionsContainer = container.querySelector('.inventario-actions, .table-actions, .actions-bar');
+        
+        if (!actionsContainer) {
+            // Buscar el encabezado de la tabla o seccion de inventario
+            const headerSection = container.querySelector('h2, h3, .section-title, .inventario-header');
+            if (headerSection) {
+                actionsContainer = document.createElement('div');
+                actionsContainer.className = 'inventario-actions';
+                actionsContainer.style.cssText = 'display: flex; align-items: center; gap: 10px; margin: 15px 0; flex-wrap: wrap;';
+                headerSection.parentNode.insertBefore(actionsContainer, headerSection.nextSibling);
+            } else {
+                // Si no hay header, insertar al inicio del contenedor
+                actionsContainer = document.createElement('div');
+                actionsContainer.className = 'inventario-actions';
+                actionsContainer.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;';
+                container.insertBefore(actionsContainer, container.firstChild);
             }
-
-            // Opcion 2: En el contenido principal
-            const mainContent = document.querySelector('.main-content, .container, main');
-            if (mainContent && !document.getElementById('btn-open-barcode')) {
-                const buttonContainer = document.createElement('div');
-                buttonContainer.style.cssText = 'text-align: right; margin-bottom: 20px; padding: 10px 0;';
-                
-                const button = document.createElement('button');
-                button.id = 'btn-open-barcode';
-                button.innerHTML = 'Generar Codigos de Barra';
-                button.title = 'Generar codigos de barras del inventario';
-                button.style.cssText = `
-                    background: linear-gradient(135deg, #1a3a6b, #2c5aa0);
-                    color: white;
-                    border: none;
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 0.9em;
-                    font-weight: 500;
-                    transition: all 0.3s ease;
-                `;
-                button.addEventListener('mouseenter', () => {
-                    button.style.transform = 'translateY(-2px)';
-                    button.style.boxShadow = '0 4px 12px rgba(26, 58, 107, 0.4)';
-                });
-                button.addEventListener('mouseleave', () => {
-                    button.style.transform = 'translateY(0)';
-                    button.style.boxShadow = 'none';
-                });
-                button.addEventListener('click', openBarcodeModal);
-                
-                buttonContainer.appendChild(button);
-                mainContent.insertBefore(buttonContainer, mainContent.firstChild);
-                return true;
-            }
-
-            return false;
-        };
-
-        // Intentar agregar inmediatamente
-        if (!addButton()) {
-            // Si no se encuentra el contenedor, esperar a que el DOM este listo
-            const observer = new MutationObserver(() => {
-                if (addButton()) {
-                    observer.disconnect();
-                }
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
         }
+
+        const button = document.createElement('button');
+        button.id = 'btn-open-barcode';
+        button.className = 'btn-barcode-action';
+        button.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 4h4v16H2zM8 4h2v16H8zM14 4h2v16h-2zM18 4h4v16h-4z"/>
+                <path d="M6 2v4M14 2v4M22 2v4"/>
+            </svg>
+            Generar Codigos de Barra
+        `;
+        button.title = 'Generar codigos de barras del inventario';
+        button.addEventListener('click', openBarcodeModal);
+        
+        actionsContainer.appendChild(button);
     }
 
     /**
-     * Obtiene los insumos del inventario desde el storage
+     * Obtiene los insumos del inventario desde Supabase
      */
-    function _getInventoryItems() {
+    async function _getInventoryItems() {
         try {
-            // Intentar obtener desde database.js
-            if (typeof Database !== 'undefined' && Database.getInsumos) {
-                return Database.getInsumos() || [];
+            // Verificar si supabase esta disponible
+            if (typeof supabase !== 'undefined' && supabase.from) {
+                const { data, error } = await supabase
+                    .from('insumos')
+                    .select('*')
+                    .order('nombre', { ascending: true });
+
+                if (error) {
+                    console.error('Error al obtener insumos de Supabase:', error);
+                    throw error;
+                }
+
+                return data || [];
             }
             
-            // Alternativa: obtener desde localStorage
-            const inventarioData = localStorage.getItem('inventario_bodega');
-            if (inventarioData) {
-                const data = JSON.parse(inventarioData);
-                return data.insumos || data || [];
+            // Fallback: Intentar obtener desde Database module
+            if (typeof Database !== 'undefined' && typeof Database.getInsumos === 'function') {
+                const insumos = await Database.getInsumos();
+                return insumos || [];
             }
 
-            // Alternativa: obtener desde window.appState
-            if (window.appState && window.appState.inventario) {
-                return window.appState.inventario;
+            // Fallback: Intentar obtener desde window.appState
+            if (window.appState && window.appState.insumos) {
+                return window.appState.insumos;
             }
 
+            console.warn('No se pudo obtener insumos de Supabase ni de modulos locales');
             return [];
         } catch (error) {
             console.error('Error al obtener items del inventario:', error);
-            return [];
+            throw error;
         }
     }
 
@@ -473,7 +518,8 @@ const BarcodeModule = (() => {
                 const searchTerm = filters.search.toLowerCase();
                 const nombreMatch = item.nombre && item.nombre.toLowerCase().includes(searchTerm);
                 const cbMatch = item.cb && item.cb.toString().toLowerCase().includes(searchTerm);
-                if (!nombreMatch && !cbMatch) return false;
+                const descripcionMatch = item.descripcion && item.descripcion.toLowerCase().includes(searchTerm);
+                if (!nombreMatch && !cbMatch && !descripcionMatch) return false;
             }
 
             // Filtro por insumo especifico
@@ -499,7 +545,7 @@ const BarcodeModule = (() => {
             return;
         }
 
-        // Mostrar contador
+        // Mostrar contador y boton de imprimir
         let html = `
             <div class="barcode-results-header">
                 <h3>Codigos Generados</h3>
@@ -562,46 +608,15 @@ const BarcodeModule = (() => {
     /**
      * Abre el modal de generacion de codigos de barras
      */
-    function openBarcodeModal() {
-        // Verificar si JsBarcode esta disponible
-        if (typeof JsBarcode === 'undefined') {
-            console.warn('JsBarcode no esta cargado. Intentando cargar dinamicamente...');
-            _loadJsBarcode(() => {
-                _showModal();
-            });
-        } else {
-            _showModal();
-        }
-    }
-
-    /**
-     * Carga dinamicamente la biblioteca JsBarcode
-     */
-    function _loadJsBarcode(callback) {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js';
-        script.onload = callback;
-        script.onerror = () => {
-            console.error('No se pudo cargar JsBarcode. Se usara un fallback visual.');
-            callback();
-        };
-        document.head.appendChild(script);
-    }
-
-    /**
-     * Muestra el modal con la interfaz de generacion
-     */
-    function _showModal() {
+    async function openBarcodeModal() {
         // Remover modal existente si lo hay
         const existingModal = document.getElementById('barcode-modal-overlay');
         if (existingModal) {
             existingModal.remove();
         }
 
-        const inventoryItems = _getInventoryItems();
-        const categories = _getUniqueCategories(inventoryItems);
-
-        const modalHTML = `
+        // Mostrar modal con loading
+        const loadingModal = `
             <div id="barcode-modal-overlay" class="barcode-modal-overlay">
                 <div class="barcode-modal">
                     <div class="barcode-modal-header">
@@ -609,52 +624,16 @@ const BarcodeModule = (() => {
                         <button class="barcode-modal-close" onclick="document.getElementById('barcode-modal-overlay').remove()">&times;</button>
                     </div>
                     <div class="barcode-modal-body">
-                        <div class="barcode-filters">
-                            <h3>Filtros de Busqueda</h3>
-                            <div class="barcode-filter-group">
-                                <div class="barcode-filter-item">
-                                    <label for="barcode-filter-categoria">Categoria</label>
-                                    <select id="barcode-filter-categoria">
-                                        <option value="todas">Todas las categorias</option>
-                                        ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div class="barcode-filter-item">
-                                    <label for="barcode-filter-search">Buscar por Nombre o CB</label>
-                                    <input type="text" id="barcode-filter-search" placeholder="Ej: Alcohol Gel, CB-123...">
-                                </div>
-                                <div class="barcode-filter-item">
-                                    <label for="barcode-filter-insumo">Insumo Especifico (CB)</label>
-                                    <select id="barcode-filter-insumo">
-                                        <option value="">Todos los insumos</option>
-                                        ${inventoryItems.map(item => {
-                                            const name = item.nombre || item.descripcion || 'Sin nombre';
-                                            const code = item.cb || item.id || '';
-                                            return `<option value="${code}">${name} (${code})</option>`;
-                                        }).join('')}
-                                    </select>
-                                </div>
-                                <div class="barcode-filter-actions">
-                                    <button class="btn-barcode-generate" onclick="BarcodeModule.generateBarcodes()">
-                                        Generar Codigos
-                                    </button>
-                                    <button class="btn-barcode-print" onclick="BarcodeModule.printBarcodes()">
-                                        Imprimir
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="barcode-results" class="barcode-results">
-                            <div class="barcode-empty">
-                                Seleccione los filtros y haga clic en "Generar Codigos" para visualizar los codigos de barras
-                            </div>
+                        <div class="barcode-loading">
+                            <div class="barcode-loading-spinner"></div>
+                            <p>Cargando inventario desde la base de datos...</p>
                         </div>
                     </div>
                 </div>
             </div>
         `;
 
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
+        document.body.insertAdjacentHTML('beforeend', loadingModal);
 
         // Cerrar modal al hacer clic fuera
         document.getElementById('barcode-modal-overlay').addEventListener('click', function(e) {
@@ -663,27 +642,118 @@ const BarcodeModule = (() => {
             }
         });
 
-        // Evento para generar al presionar Enter en el campo de busqueda
-        document.getElementById('barcode-filter-search').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                BarcodeModule.generateBarcodes();
+        try {
+            // Obtener items de Supabase
+            const inventoryItems = await _getInventoryItems();
+            
+            if (!inventoryItems || inventoryItems.length === 0) {
+                const modalBody = document.querySelector('.barcode-modal-body');
+                if (modalBody) {
+                    modalBody.innerHTML = `
+                        <div class="barcode-error">
+                            No se encontraron insumos en el inventario. 
+                            Verifique la conexion con la base de datos.
+                        </div>
+                    `;
+                }
+                return;
             }
-        });
+
+            const categories = _getUniqueCategories(inventoryItems);
+
+            // Actualizar el contenido del modal con los filtros
+            const modalBody = document.querySelector('.barcode-modal-body');
+            if (modalBody) {
+                modalBody.innerHTML = `
+                    <div class="barcode-filters">
+                        <h3>Filtros de Busqueda</h3>
+                        <div class="barcode-filter-group">
+                            <div class="barcode-filter-item">
+                                <label for="barcode-filter-categoria">Categoria</label>
+                                <select id="barcode-filter-categoria">
+                                    <option value="todas">Todas las categorias</option>
+                                    ${categories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="barcode-filter-item">
+                                <label for="barcode-filter-search">Buscar por Nombre o CB</label>
+                                <input type="text" id="barcode-filter-search" placeholder="Ej: Alcohol Gel, CB-123...">
+                            </div>
+                            <div class="barcode-filter-item">
+                                <label for="barcode-filter-insumo">Insumo Especifico (CB)</label>
+                                <select id="barcode-filter-insumo">
+                                    <option value="">Todos los insumos</option>
+                                    ${inventoryItems.map(item => {
+                                        const name = item.nombre || item.descripcion || 'Sin nombre';
+                                        const code = item.cb || item.id || '';
+                                        return `<option value="${code}">${name} (${code})</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            <div class="barcode-filter-actions">
+                                <button class="btn-barcode-generate" onclick="BarcodeModule.generateBarcodes()">
+                                    Generar Codigos
+                                </button>
+                                <button class="btn-barcode-print" onclick="BarcodeModule.printBarcodes()" disabled id="btn-print-main">
+                                    Imprimir
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="barcode-results" class="barcode-results">
+                        <div class="barcode-empty">
+                            Seleccione los filtros y haga clic en "Generar Codigos" para visualizar los codigos de barras
+                        </div>
+                    </div>
+                `;
+
+                // Evento para generar al presionar Enter en el campo de busqueda
+                document.getElementById('barcode-filter-search').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        BarcodeModule.generateBarcodes();
+                    }
+                });
+
+                // Evento para habilitar/deshabilitar boton de imprimir
+                document.getElementById('barcode-filter-categoria').addEventListener('change', () => {
+                    document.getElementById('btn-print-main').disabled = true;
+                });
+                document.getElementById('barcode-filter-insumo').addEventListener('change', () => {
+                    document.getElementById('btn-print-main').disabled = true;
+                });
+            }
+        } catch (error) {
+            const modalBody = document.querySelector('.barcode-modal-body');
+            if (modalBody) {
+                modalBody.innerHTML = `
+                    <div class="barcode-error">
+                        Error al cargar el inventario: ${error.message}
+                        <br><br>
+                        <button class="btn-barcode-generate" onclick="BarcodeModule.openBarcodeModal()">
+                            Reintentar
+                        </button>
+                    </div>
+                `;
+            }
+        }
     }
 
     /**
      * Genera los codigos de barras basados en los filtros actuales
      */
-    function generateBarcodes() {
+    async function generateBarcodes() {
+        const generateBtn = document.querySelector('.btn-barcode-generate');
+        const printBtn = document.getElementById('btn-print-main');
+        
+        if (generateBtn) generateBtn.disabled = true;
+        if (printBtn) printBtn.disabled = true;
+
         const filters = {
             categoria: document.getElementById('barcode-filter-categoria')?.value || 'todas',
             search: document.getElementById('barcode-filter-search')?.value || '',
             insumoEspecifico: document.getElementById('barcode-filter-insumo')?.value || ''
         };
 
-        const items = _getInventoryItems();
-        const filteredItems = _filterItems(items, filters);
-        
         // Mostrar loading
         const resultsContainer = document.getElementById('barcode-results');
         if (resultsContainer) {
@@ -695,10 +765,26 @@ const BarcodeModule = (() => {
             `;
         }
 
-        // Pequeno delay para mostrar el loading
-        setTimeout(() => {
-            _generateBarcodes(filteredItems);
-        }, 300);
+        try {
+            const items = await _getInventoryItems();
+            const filteredItems = _filterItems(items, filters);
+            
+            // Pequeno delay para mostrar el loading
+            setTimeout(() => {
+                _generateBarcodes(filteredItems);
+                if (generateBtn) generateBtn.disabled = false;
+                if (printBtn && filteredItems.length > 0) printBtn.disabled = false;
+            }, 500);
+        } catch (error) {
+            if (resultsContainer) {
+                resultsContainer.innerHTML = `
+                    <div class="barcode-error">
+                        Error al generar codigos: ${error.message}
+                    </div>
+                `;
+            }
+            if (generateBtn) generateBtn.disabled = false;
+        }
     }
 
     /**
@@ -766,9 +852,8 @@ const BarcodeModule = (() => {
                         height: auto;
                     }
                     @media print {
-                        .no-print {
-                            display: none;
-                        }
+                        body { margin: 0; padding: 15px; }
+                        .print-grid { grid-template-columns: repeat(2, 1fr); }
                     }
                 </style>
             </head>
@@ -785,14 +870,25 @@ const BarcodeModule = (() => {
                         border-radius: 5px;
                         cursor: pointer;
                         font-size: 1em;
-                    ">Imprimir</button>
+                    ">Enviar a Impresora</button>
                 </div>
-                <div class="print-grid">
-                    ${Array.from(barcodeItems).map(item => {
-                        const clonedItem = item.cloneNode(true);
-                        return `<div class="print-item">${clonedItem.outerHTML}</div>`;
-                    }).join('')}
+                <div class="print-grid" id="print-grid">
                 </div>
+                <script>
+                    // Copiar los SVG generados cuando la ventana cargue
+                    window.onload = function() {
+                        const printGrid = document.getElementById('print-grid');
+                        if (printGrid && window.opener) {
+                            const barcodeItems = window.opener.document.querySelectorAll('.barcode-item');
+                            barcodeItems.forEach(item => {
+                                const div = document.createElement('div');
+                                div.className = 'print-item';
+                                div.innerHTML = item.innerHTML;
+                                printGrid.appendChild(div);
+                            });
+                        }
+                    };
+                </script>
             </body>
             </html>
         `;
@@ -805,22 +901,6 @@ const BarcodeModule = (() => {
         printWindow = window.open('', '_blank', 'width=900,height=700');
         printWindow.document.write(printContent);
         printWindow.document.close();
-        
-        // Esperar a que carguen los SVG y luego imprimir
-        printWindow.onload = function() {
-            // Copiar los SVG generados
-            barcodeItems.forEach((item, index) => {
-                const originalSvg = item.querySelector('svg');
-                const printItems = printWindow.document.querySelectorAll('.print-item');
-                if (printItems[index] && originalSvg) {
-                    const targetSvg = printItems[index].querySelector('svg');
-                    if (targetSvg) {
-                        targetSvg.innerHTML = originalSvg.innerHTML;
-                        targetSvg.setAttribute('viewBox', originalSvg.getAttribute('viewBox') || '');
-                    }
-                }
-            });
-        };
     }
 
     /**
@@ -844,12 +924,13 @@ const BarcodeModule = (() => {
 })();
 
 // Auto-inicializar cuando el DOM este listo
-document.addEventListener('DOMContentLoaded', () => {
-    // Pequeno retraso para asegurar que la aplicacion principal se haya cargado
-    setTimeout(() => {
-        BarcodeModule.init();
-    }, 1000);
-});
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => BarcodeModule.init(), 1000);
+    });
+} else {
+    setTimeout(() => BarcodeModule.init(), 1000);
+}
 
 // Exponer globalmente para acceso desde HTML
 window.BarcodeModule = BarcodeModule;
