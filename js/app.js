@@ -42,6 +42,11 @@ const App = {
         const ft = document.getElementById('filtro-tipo-movimiento'); if (ft) ft.addEventListener('change', () => this.renderMovimientos());
         const fu = document.getElementById('filtro-usuario-movimiento'); if (fu) fu.addEventListener('change', () => this.renderMovimientos());
         const bm = document.getElementById('busqueda-movimientos'); if (bm) bm.addEventListener('input', () => this.renderMovimientos());
+        
+        // Event listener para el buscador de inventario
+        const buscadorInventario = document.getElementById('busqueda-inventario');
+        if (buscadorInventario) buscadorInventario.addEventListener('input', () => this.renderInventario());
+        
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') UI.closeModal(); });
     },
 
@@ -96,18 +101,67 @@ const App = {
 
     async showInventario() { UI.setActiveSection('inventario'); await this.loadAllData(); this.renderInventario(); },
     renderInventario() {
-        const sc = document.getElementById('filtro-stock-critico')?.checked ?? false; const pv = document.getElementById('filtro-por-vencer')?.checked ?? false;
-        const vc = document.getElementById('filtro-vencidos')?.checked ?? false; const ninguno = !sc && !pv && !vc;
-        const hoy = new Date(); const lim = new Date(hoy); lim.setDate(lim.getDate() + (this.state.config.dias_vencimiento || 30));
-        let items = [...this.state.inventario]; let filtrados = [];
-        if (ninguno) { filtrados = items; } else { items.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let inc = false; if (sc && ec && !venc) inc = true; if (pv && vp && !ec) inc = true; if (vc && venc) inc = true; if (ec && venc && (sc || vc)) inc = true; if (inc) filtrados.push(item); }); }
+        const sc = document.getElementById('filtro-stock-critico')?.checked ?? false; 
+        const pv = document.getElementById('filtro-por-vencer')?.checked ?? false;
+        const vc = document.getElementById('filtro-vencidos')?.checked ?? false; 
+        const ninguno = !sc && !pv && !vc;
+        const busqueda = document.getElementById('busqueda-inventario')?.value?.trim().toLowerCase() || '';
+        
+        const hoy = new Date(); 
+        const lim = new Date(hoy); 
+        lim.setDate(lim.getDate() + (this.state.config.dias_vencimiento || 30));
+        let items = [...this.state.inventario]; 
+        let filtrados = [];
+        
+        if (ninguno) { 
+            filtrados = items; 
+        } else { 
+            items.forEach(item => { 
+                const ec = this.esStockCritico(item); 
+                const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; 
+                const venc = v && v < hoy; 
+                const vp = v && !venc && v <= lim; 
+                let inc = false; 
+                if (sc && ec && !venc) inc = true; 
+                if (pv && vp && !ec) inc = true; 
+                if (vc && venc) inc = true; 
+                if (ec && venc && (sc || vc)) inc = true; 
+                if (inc) filtrados.push(item); 
+            }); 
+        }
+        
+        // Aplicar búsqueda por nombre
+        if (busqueda) {
+            filtrados = filtrados.filter(item => 
+                item.nombre.toLowerCase().includes(busqueda) ||
+                (item.lote && item.lote.toLowerCase().includes(busqueda)) ||
+                (item.codigo_barras && item.codigo_barras.toLowerCase().includes(busqueda)) ||
+                (item.anaquel && item.anaquel.toLowerCase().includes(busqueda))
+            );
+        }
+        
         document.getElementById('contador-inventario').textContent = filtrados.length;
-        const c = document.getElementById('tabla-inventario'); if (filtrados.length === 0) { c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.box}</div><p>SIN RESULTADOS.</p></div>`; return; }
+        const c = document.getElementById('tabla-inventario'); 
+        if (filtrados.length === 0) { 
+            c.innerHTML = `<div class="empty-state"><div class="icon">${UI.icons.box}</div><p>SIN RESULTADOS.</p></div>`; 
+            return; 
+        }
         const esB = window.currentBodega === 'BOTIQUIN';
         let th = esB ? '<th>NOMBRE</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">CB</th><th class="text-center">ACC.</th>' : '<th>NOMBRE</th><th class="text-center">ANAQUEL</th><th class="text-center">STOCK</th><th class="text-center">UND.</th><th class="text-center">LOTE</th><th class="text-center">VENC.</th><th class="text-center">CB</th><th class="text-center">ACC.</th>';
         let h = `<table><thead><tr>${th}</tr></thead><tbody>`;
-        filtrados.forEach(item => { const ec = this.esStockCritico(item); const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; const venc = v && v < hoy; const vp = v && !venc && v <= lim; let cl = ''; if (venc) cl = 'stock-critical'; else if (ec) cl = 'stock-critical'; else if (vp) cl = 'stock-warning'; h += `<tr class="${cl}"><td><strong>${item.nombre}</strong></td>${esB ? '' : `<td class="text-center">${item.anaquel}</td>`}<td class="text-center">${item.stock}</td><td class="text-center">${item.unidad||''}</td><td class="text-center">${item.lote||'-'}</td><td class="text-center">${item.vencimiento||'-'}${venc?' <span class="badge badge-danger">VENC</span>':''}${vp&&!ec?' <span class="badge badge-warning">PRONT</span>':''}</td><td class="text-center">${item.codigo_barras ? `<span class="badge badge-info">${item.codigo_barras}</span>` : '-'}</td><td class="text-center"><button class="btn btn-warning btn-sm" onclick="App.editarInsumo(${item.id})">${UI.icons.edit}</button><button class="btn btn-danger btn-sm" onclick="App.eliminarInsumo(${item.id})">${UI.icons.trash}</button></td></tr>`; });
-        h += '</tbody></table>'; c.innerHTML = h;
+        filtrados.forEach(item => { 
+            const ec = this.esStockCritico(item); 
+            const v = item.vencimiento ? new Date(item.vencimiento + 'T00:00:00') : null; 
+            const venc = v && v < hoy; 
+            const vp = v && !venc && v <= lim; 
+            let cl = ''; 
+            if (venc) cl = 'stock-critical'; 
+            else if (ec) cl = 'stock-critical'; 
+            else if (vp) cl = 'stock-warning'; 
+            h += `<tr class="${cl}"><td><strong>${item.nombre}</strong></td>${esB ? '' : `<td class="text-center">${item.anaquel}</td>`}<td class="text-center">${item.stock}</td><td class="text-center">${item.unidad||''}</td><td class="text-center">${item.lote||'-'}</td><td class="text-center">${item.vencimiento||'-'}${venc?' <span class="badge badge-danger">VENC</span>':''}${vp&&!ec?' <span class="badge badge-warning">PRONT</span>':''}</td><td class="text-center">${item.codigo_barras ? `<span class="badge badge-info">${item.codigo_barras}</span>` : '-'}</td><td class="text-center"><button class="btn btn-warning btn-sm" onclick="App.editarInsumo(${item.id})">${UI.icons.edit}</button><button class="btn btn-danger btn-sm" onclick="App.eliminarInsumo(${item.id})">${UI.icons.trash}</button></td></tr>`; 
+        });
+        h += '</tbody></table>'; 
+        c.innerHTML = h;
     },
 
     async showMovimientos() { UI.setActiveSection('movimientos'); UI.showLoading('tabla-movimientos'); try { await this.loadAllData(); this.cargarFiltroUsuarios(); this.renderMovimientos(); } catch (e) { document.getElementById('tabla-movimientos').innerHTML = '<div class="empty-state"><p>ERROR AL CARGAR.</p></div>'; } },
