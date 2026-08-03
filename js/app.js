@@ -131,7 +131,7 @@ const App = {
         const esMovil = window.innerWidth <= 768;
         const campoAnaquel = esBotiquin ? '' : `<div class="form-group"><label>ANAQUEL *</label><select id="ing-anaquel"><option value="">SELECCIONE...</option>${anaqueles.map(a => `<option value="${a}">${a}</option>`).join('')}</select>${anaqueles.length===0?'<small style="color:#c0392b;">NO HAY ANAQUELES.</small>':''}</div>`;
         const botonEscaner = esMovil ? `<div class="form-group"><button type="button" class="btn btn-info btn-block" onclick="App.abrirEscanner('ingreso')" style="margin-bottom:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg> ESCANEAR CÓDIGO DE BARRAS</button></div>` : '';
-        UI.openModal(`<h2>NUEVO INGRESO</h2>${botonEscaner}<div id="scanner-container-ingreso" style="display:none;margin-bottom:10px;"></div><div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="ing-codigo-barras" placeholder="ESCANEE O INGRESE EL CÓDIGO..." onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasIngreso();}"></div>${campoAnaquel}<div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><input type="text" id="ing-lote" style="text-transform:uppercase;"></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
+        UI.openModal(`<h2>NUEVO INGRESO</h2>${botonEscaner}<div id="scanner-container-ingreso" style="display:none;margin-bottom:10px;"></div><div class="form-group" style="position:relative;"><label>NOMBRE DEL INSUMO *</label><input type="text" id="ing-nombre" placeholder="ESCRIBA EL NOMBRE..." autofocus autocomplete="off" onkeyup="App.buscarCoincidencias('ing')" onfocus="App.buscarCoincidencias('ing')" style="text-transform:uppercase;"><div id="sugerencias-ing" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #ddd;border-radius:0 0 5px 5px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 8px rgba(0,0,0,0.1);"></div></div><div class="form-group"><label>CÓDIGO DE BARRAS</label><input type="text" id="ing-codigo-barras" placeholder="ESCANEE O INGRESE EL CÓDIGO..." onkeypress="if(event.key==='Enter'){event.preventDefault();App.buscarPorCodigoBarrasIngreso();}"></div>${campoAnaquel}<div class="form-row"><div class="form-group"><label>CANTIDAD *</label><input type="number" id="ing-cantidad" value="1" min="1"></div><div class="form-group"><label>UNIDAD</label><select id="ing-unidad"><option value="">SELECCIONE...</option>${unidades.map(u => `<option value="${u}">${u}</option>`).join('')}</select></div></div><div class="form-row"><div class="form-group"><label>LOTE</label><div id="ing-lote-container"><input type="text" id="ing-lote" style="text-transform:uppercase;"></div></div><div class="form-group"><label>VENCIMIENTO</label><input type="date" id="ing-vencimiento"></div></div><div class="form-group"><label>COMENTARIOS</label><textarea id="ing-comentarios" style="text-transform:uppercase;"></textarea></div><div class="form-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">CANCELAR</button><button class="btn btn-success" onclick="App.procesarIngreso()">${UI.icons.plus} REGISTRAR</button></div>`);
         setTimeout(() => { document.addEventListener('click', function cerrar(e) { const inp = document.getElementById('ing-nombre'); const sug = document.getElementById('sugerencias-ing'); if (inp && sug && e.target !== inp && !sug.contains(e.target)) sug.style.display = 'none'; }); }, 100);
     },
 
@@ -187,11 +187,90 @@ const App = {
                 document.getElementById('ing-nombre').value = item.nombre;
                 document.getElementById('ing-unidad').value = item.unidad || '';
                 if (document.getElementById('ing-anaquel')) document.getElementById('ing-anaquel').value = item.anaquel;
-                document.getElementById('ing-lote').value = item.lote || '';
                 document.getElementById('ing-vencimiento').value = item.vencimiento || '';
-                UI.showToast('INSUMO ENCONTRADO: ' + item.nombre, 'success');
-            } else { UI.showToast('CÓDIGO NUEVO. COMPLETE LOS DATOS.', 'warning'); }
+                
+                // Construir lista de lotes existentes para este código de barras
+                this.construirSelectorLotesIngreso(resultados, item);
+                
+                UI.showToast('INSUMO ENCONTRADO: ' + item.nombre + ' | ' + resultados.length + ' LOTE(S)', 'success');
+            } else { 
+                // Restaurar campo de lote como input normal
+                document.getElementById('ing-lote-container').innerHTML = '<input type="text" id="ing-lote" style="text-transform:uppercase;">';
+                UI.showToast('CÓDIGO NUEVO. COMPLETE LOS DATOS.', 'warning'); 
+            }
         } catch (e) { UI.showToast('ERROR AL BUSCAR CÓDIGO', 'error'); }
+    },
+
+    construirSelectorLotesIngreso(resultados, itemSeleccionado) {
+        const container = document.getElementById('ing-lote-container');
+        if (!container) return;
+        
+        // Agrupar por lote (evitar duplicados)
+        const lotesUnicos = [];
+        const lotesVistos = new Set();
+        resultados.forEach(r => {
+            const loteKey = (r.lote || 'SIN LOTE').toUpperCase();
+            if (!lotesVistos.has(loteKey)) {
+                lotesVistos.add(loteKey);
+                lotesUnicos.push(r);
+            }
+        });
+        
+        let html = '<select id="ing-lote" onchange="App.seleccionarLoteIngreso()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;font-family:inherit;">';
+        html += '<option value="">SELECCIONE UN LOTE...</option>';
+        
+        lotesUnicos.forEach(r => {
+            const selected = (r.lote || '') === (itemSeleccionado.lote || '') ? ' selected' : '';
+            const loteStr = r.lote || 'SIN LOTE';
+            const vencStr = r.vencimiento || 'SIN VENC.';
+            const stockStr = r.stock || 0;
+            html += `<option value="${this.escapeHtml(r.lote || '')}" data-vencimiento="${r.vencimiento || ''}" data-unidad="${this.escapeHtml(r.unidad || '')}" data-anaquel="${this.escapeHtml(r.anaquel || '')}"${selected}>${loteStr} | VENC: ${vencStr} | STOCK: ${stockStr}</option>`;
+        });
+        
+        html += '<option value="__NUEVO_LOTE__">➕ INGRESAR LOTE NUEVO...</option>';
+        html += '</select>';
+        
+        container.innerHTML = html;
+    },
+
+    seleccionarLoteIngreso() {
+        const select = document.getElementById('ing-lote');
+        if (!select) return;
+        
+        const selectedValue = select.value;
+        
+        if (selectedValue === '__NUEVO_LOTE__') {
+            // Convertir a input de texto para lote nuevo
+            const container = document.getElementById('ing-lote-container');
+            container.innerHTML = '<input type="text" id="ing-lote" style="text-transform:uppercase;" placeholder="INGRESE NUEVO LOTE...">';
+            document.getElementById('ing-vencimiento').value = '';
+            document.getElementById('ing-vencimiento').focus();
+            return;
+        }
+        
+        if (!selectedValue) return;
+        
+        // Obtener datos del option seleccionado
+        const selectedOption = select.options[select.selectedIndex];
+        const vencimiento = selectedOption.getAttribute('data-vencimiento') || '';
+        const unidad = selectedOption.getAttribute('data-unidad') || '';
+        const anaquel = selectedOption.getAttribute('data-anaquel') || '';
+        
+        // Rellenar campos
+        document.getElementById('ing-vencimiento').value = vencimiento;
+        if (unidad && document.getElementById('ing-unidad')) {
+            document.getElementById('ing-unidad').value = unidad;
+        }
+        if (anaquel && document.getElementById('ing-anaquel')) {
+            document.getElementById('ing-anaquel').value = anaquel;
+        }
+        
+        UI.showToast('DATOS DEL LOTE CARGADOS', 'success');
+    },
+
+    escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     },
 
     async buscarPorCodigoBarrasSalida(codigo) {
@@ -253,13 +332,18 @@ const App = {
         const anaquel = esBotiquin ? 'BOTIQUIN' : document.getElementById('ing-anaquel').value;
         const cantidad = parseInt(document.getElementById('ing-cantidad').value);
         const unidad = document.getElementById('ing-unidad').value;
-        const lote = document.getElementById('ing-lote').value.trim().toUpperCase();
+        const loteInput = document.getElementById('ing-lote');
+        const lote = loteInput ? (loteInput.tagName === 'SELECT' ? loteInput.value : loteInput.value.trim().toUpperCase()) : '';
         const vencimiento = document.getElementById('ing-vencimiento').value;
         const codigoBarras = this.limpiarCodigoBarras(document.getElementById('ing-codigo-barras').value);
         const comentarios = document.getElementById('ing-comentarios').value.trim().toUpperCase();
+        
+        // Si se seleccionó "INGRESAR LOTE NUEVO", limpiar el valor
+        const loteFinal = (lote === '__NUEVO_LOTE__') ? '' : lote;
+        
         if (!nombre || (!esBotiquin && !anaquel) || !cantidad || cantidad <= 0) { UI.showToast('COMPLETE LOS CAMPOS (*)', 'error'); return; }
         const seccion = esBotiquin ? 'B' : anaquel.charAt(0);
-        try { await DB.procesarIngreso(nombre, seccion, anaquel, cantidad, unidad, lote, vencimiento, codigoBarras || null, comentarios); UI.closeModal(); UI.showToast('INGRESO REGISTRADO', 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); }
+        try { await DB.procesarIngreso(nombre, seccion, anaquel, cantidad, unidad, loteFinal, vencimiento, codigoBarras || null, comentarios); UI.closeModal(); UI.showToast('INGRESO REGISTRADO', 'success'); await this.loadAllData(); this.renderDashboard(); } catch (e) { UI.showToast('ERROR: ' + e.message, 'error'); }
     },
 
     buscarCoincidenciasSalida() {
